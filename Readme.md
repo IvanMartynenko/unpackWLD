@@ -1,6 +1,6 @@
 # WLD File Tools
 
-**This script allows you to unpack and repack WLD files for *The Sting!* (*Der Clou 2*, *Ва-банк*)**
+**This script allows you to unpack and repack WLD files for *The Sting!* (*Der Clou 2*, *Ва-банк*) game**
 
 ## Installation
 
@@ -57,7 +57,7 @@ textures:
 
 # Structure of WLD Game Binary File
 
-## Main Structure of the WLD Game Binary File
+### Main Structure of the WLD Game Binary File
 
 | Field | Size              | Description                                           |
 |-------|-------------------|-------------------------------------------------------|
@@ -69,7 +69,7 @@ textures:
 
 ---
 
-## Structure of WLD File Data
+### Structure of WLD File Data
 
 The data in this format is organized as follows:
 
@@ -83,7 +83,7 @@ The data in this format is organized as follows:
 
 ---
 
-## List of Supported Data Types
+### List of Supported Data Types
 
 | MARKER Value | Description         | Array Item Separator |
 |--------------|---------------------|----------------------|
@@ -97,7 +97,7 @@ The data in this format is organized as follows:
 
 ---
 
-## Texture Page Structure
+### Texture Page Structure
 
 | Field               | Size              | Description                                                                      |
 |---------------------|-------------------|----------------------------------------------------------------------------------|
@@ -115,7 +115,7 @@ The data in this format is organized as follows:
 
 ---
 
-## Texture Info Structure
+### Texture Info Structure
 
 | Field       | Size              | Description                                                             |
 |-------------|-------------------|-------------------------------------------------------------------------|
