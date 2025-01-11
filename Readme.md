@@ -52,5 +52,83 @@ textures:
 
 ---
 
+
+# Structure of WLD Game Binary File
+
+## Main Structure of the WLD Game Binary File
+
+| Field | Size              | Description                                           |
+|-------|-------------------|-------------------------------------------------------|
+| WRLD  | `const char[4]`   | "WRLD". File type identifier.                         |
+| zero  | `int`             | A zero value.                                         |
+| data  |                   | The main file data.                                   |
+| EOF   | `const char[4]`   | "EOF ". End-of-file marker. Note: includes a space.   |
+| zero  | `int`             | A zero value.                                         |
+
+---
+
+## Structure of WLD File Data
+
+The data in this format is organized as follows:
+
+| Field   | Size              | Description                                         |
+|---------|-------------------|-----------------------------------------------------|
+| MARKER  | `const char[4]`   | Identifier for the type of stored data.             |
+| zero    | `int`             | A zero value.                                       |
+| array   |                   | Array containing the current data type.             |
+| END     | `const char[4]`   | "END ". End-of-data marker. Note: includes a space. |
+| zero    | `int`             | A zero value.                                       |
+
+---
+
+## List of Supported Data Types
+
+| MARKER Value | Description         | Array Item Separator |
+|--------------|---------------------|----------------------|
+| TEXP         | Texture Pages       | PAGE                 |
+| GROU         | Model List Tree     | ENTR                 |
+| OBGR         | Object List Tree    | ENTR                 |
+| LIST         | Model List          | MODL                 |
+| OBJS         | Object List         | OBJ                  |
+| MAKL         | Macro List          | OBJ                  |
+| TREE         | World Tree          | NODE                 |
+
+---
+
+## Texture Page Structure
+
+| Field               | Size              | Description                                                                      |
+|---------------------|-------------------|----------------------------------------------------------------------------------|
+| PAGE                | `const char[4]`   | Texture page identifier.                                                         |
+| size                | `int`             | Binary size of the texture page, stored in Big-Endian format.                    |
+| 2                   | `int`             | Texture page identifier in integer format.                                       |
+| width               | `int`             | Width of the texture page.                                                       |
+| height              | `int`             | Height of the texture page.                                                      |
+| index               | `int`             | Index of the texture page.                                                       |
+| texture count       | `int`             | Number of textures contained on the texture page.                                |
+| texture info array  |                   | Array containing information about textures stored on the texture page.          |
+| TXPG                | `const char[4]`   | End-of-texture-info array marker.                                                |
+| is_alpha            | `int`             | Alpha channel indicator: 0 if none, -1 if present.                               |
+| PIXELS              |                   | Pixel data of the texture page, stored in uncompressed DDS file format.          |
+
+---
+
+## Texture Info Structure
+
+| Field       | Size              | Description                                                             |
+|-------------|-------------------|-------------------------------------------------------------------------|
+| Filepath    | `const char*`     | File name with its path, null-terminated (`'\0'`).                      |
+| alignment   | `const char*`     | Padding array of `'\0'` to align `filepath` to a 4-byte boundary.       |
+| x0          | `int`             | Top-left X coordinate of the texture on the texture page.               |
+| y0          | `int`             | Top-left Y coordinate of the texture on the texture page.               |
+| x2          | `int`             | Bottom-right X coordinate of the texture on the texture page.           |
+| y2          | `int`             | Bottom-right Y coordinate of the texture on the texture page.           |
+| source_x0   | `int`             | Top-left X coordinate of the cropped texture from the original file.    |
+| source_y0   | `int`             | Top-left Y coordinate of the cropped texture from the original file.    |
+| source_x2   | `int`             | Bottom-right X coordinate of the cropped texture from the original file.|
+| source_y2   | `int`             | Bottom-right Y coordinate of the cropped texture from the original file.|
+
+---
+
 ## License
 This project is licensed under the [MIT License](LICENSE).
