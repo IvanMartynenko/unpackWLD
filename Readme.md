@@ -1,5 +1,9 @@
 # WLD File Tools
 
+**This script allows you to unpack and repack WLD files for *The Sting!* (*Der Clou 2*, *Ва-банк*)**
+
+---
+
 ## Installation
 
 1. **Install Ruby**  
