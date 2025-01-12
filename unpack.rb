@@ -29,12 +29,14 @@ wld_items = {
   MAKL: { separator: 'OBJ', name: 'MakroList', items: [] }
 }
 
-if ARGV.length < 1
-  puts 'Usage: ruby unpack.rb filename.wld'
-  exit 1
-end
+# if ARGV.length < 1
+#   puts 'Usage: ruby unpack.rb filename.wld'
+#   exit 1
+# end
 
-filepath = ARGV[0]
+script_location = File.dirname(File.expand_path(__FILE__))
+filepath = Dir.glob(File.join(script_location, '*.wld')).first
+
 read_wld_file(filepath, wld_items)
 create_directories(filepath, system_paths)
 

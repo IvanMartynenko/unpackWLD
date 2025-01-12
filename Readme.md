@@ -16,15 +16,15 @@
 ## Usage
 
 ### Unpacking a WLD File
-To extract the contents of a WLD file, run:
+To extract the contents of a WLD file, copy WLD file to script folder and run:
 ```
-ruby unpack.rb path_to_WLD_file.wld
+ruby unpack.rb
 ```
 
 ### Packing Files into a WLD File
 To pack files back into a WLD file, run:
 ```
-ruby pack.rb path_to_unpacked_files
+ruby pack.rb
 ```
 
 ---
@@ -38,17 +38,7 @@ To modify a texture page using GIMP, save it in DDS format with the following se
 - **Compression:** None  
 - **Format:** RGB5A1  
 - **Save:** All visible layers  
-- **Mipmaps:** No mipmaps  
-
-### Upscaling a Texture Page
-To upscale a texture page, create a file named `path_to_unpacked_files/pack_info.yml` with the following structure:
-```yaml
-textures:
-- page_index: 347
-  scale: 2
-- page_index: 346
-  scale: 2
-```
+- **Mipmaps:** No mipmaps
 
 **Note:** The maximum size for a texture page is **512x512 pixels**.
 
