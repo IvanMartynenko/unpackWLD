@@ -1,6 +1,10 @@
+# encoding: utf-8
+Encoding.default_external = Encoding::UTF_8
+Encoding.default_internal = Encoding::UTF_8
+
 require 'fileutils'
 require "yaml"
-require_relative "utils"
+require File.expand_path("utils")
 
 # PAGE
 # FileSize (big endian)
@@ -10,13 +14,14 @@ require_relative "utils"
 # index + 1. 1,2,3,4,...
 # countOfTextures
 
+def unpack(filepath)
 system_paths = {
   output: "output",
   pack: "pack",
-  texture_pages: "pack/texture_pages",
-  texture_files: "output/texture_files",
-  single_texture_files: "output/texture_files/single",
-  multiply_texture_files: "output/texture_files/multiply",
+  texture_pages: File.join("pack", "texture_pages"),
+  texture_files: File.join("output", "texture_files"),
+  single_texture_files: File.join(File.join("output","texture_files"),"single"),
+  multiply_texture_files: File.join(File.join("output","texture_files"),"multiply")
 }
 
 wld_items = {
@@ -33,9 +38,6 @@ wld_items = {
 #   puts 'Usage: ruby unpack.rb filename.wld'
 #   exit 1
 # end
-
-script_location = File.dirname(File.expand_path(__FILE__))
-filepath = Dir.glob(File.join(script_location, '*.wld')).first
 
 read_wld_file(filepath, wld_items)
 create_directories(filepath, system_paths)
@@ -62,7 +64,7 @@ end
 wld_items.each do |key, value|
   next if key == :TEXP
 
-  file = File.open("#{system_paths[:pack]}/#{key.downcase}", "wb")
+  file = File.open(File.join(system_paths[:pack], key.downcase.to_s), "wb")
   value[:items].each do |item|
     file.write(value[:separator].size == 4 ? value[:separator] : value[:separator] + ' ')
     file.write([item.size].pack("N"))
@@ -72,14 +74,14 @@ wld_items.each do |key, value|
 end
 
 # SAVE TEXTURES
-file = File.open("#{system_paths[:pack]}/texture_pages.yml", "w")
+file = File.open(File.join(system_paths[:pack], "texture_pages.yml"), "w")
 if file
   file.write(texture_pages.map {|p| deep_stringify_keys(p.except(:data))}.to_yaml)
 end
 file.close
 
 texture_pages.each do |page|
-  file = File.open("#{system_paths[:texture_pages]}/#{page[:index]}.dds", "wb")
+  file = File.open(File.join(system_paths[:texture_pages], "#{page[:index]}.dds"), "wb")
   if file
     file.write(save_to_binary_file(init_dds_header(page[:width], page[:height], page[:is_alpha])).join)
     file.write(page[:data])
@@ -87,3 +89,10 @@ texture_pages.each do |page|
   file.close
 end
 
+end
+
+script_location = File.dirname(File.expand_path(__FILE__))
+filepaths = Dir.glob(File.join(script_location, '*.wld'))
+filepaths.each do |f|
+  unpack(f)
+end

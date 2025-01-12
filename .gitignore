@@ -1,3 +1,6 @@
 output/
 VaBank.wld
 VaBank_unpack/
+*.c
+*.dat
+a.out

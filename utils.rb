@@ -1,11 +1,17 @@
+# encoding: utf-8
+Encoding.default_external = Encoding::UTF_8
+Encoding.default_internal = Encoding::UTF_8
+
 DDS_MAGIC = 0x20534444
 
 def create_directories(filepath, system_paths)
-  directory_path = "#{File.dirname(filepath)}/#{File.basename(filepath, File.extname(filepath))}_unpack"
+  filename_without_ext = File.basename(filepath, File.extname(filepath))
+  unpack_dir = "#{filename_without_ext}_unpack"
+  directory_path = File.join(File.dirname(filepath),unpack_dir)
   # Create the nested directories
 
   system_paths.each do |key, value|
-    system_paths[key] = "#{directory_path}/#{system_paths[key]}"
+    system_paths[key] = File.join(directory_path, system_paths[key])
     FileUtils.mkdir_p(system_paths[key])
     puts "Directories '#{system_paths[key]}' created successfully."
   end
