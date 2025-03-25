@@ -122,5 +122,45 @@ The data in this format is organized as follows:
 
 ---
 
+### 3d model
+
+| Field             | Size                | Description                             |
+|-------------------|---------------------|-----------------------------------------|
+id = 9
+id = 1
+name
+alignment
+| InfluencesCamera  | `int`               | 0 off, -1 on                            |
+| noCameraCheck     | `int`               | 0 off, -1 on                            |
+| AntiGround        | `int`               | 0 off, -1 on                            |
+| defaultSkeleton   | `int`               | 0 off, -1 on                            |
+| useSkeleton       | `int`               | 0 off, -1 on                            |
+| camera            | `int` of `struct Camera` | RMAC or struct Camera              |
+| parentFolderId??            | `int`               |                              |
+| countOfAtackPoints | `int`               | Count of struct AtackPoint              |
+| NMF               | `struct Model3dNMF` | Nmf 3d file.
+
+---
+
+### Struct Camera
+
+| Field               | Size      | Description                             |
+|---------------------|-----------|-----------------------------------------|
+| coordinates_camera  | `float[5]`| x, y, z, pitch, yaw coordinate of camera         |
+| coordinates_item    | `float[5]`| x, y, z, pitch, yaw coordinate of item           |
+
+---
+
+### Struct AtackPoint
+
+| Field  | Size    | Description                             |
+|--------|---------|-----------------------------------------|
+| x      | `float` | x coordinate                            |
+| y      | `float` | y coordinate                            |
+| z      | `float` | z coordinate                            |
+| radius | `float` | radius                                  |
+
+---
+
 ## License
 This project is licensed under the [MIT License](LICENSE).
