@@ -18,8 +18,8 @@ class SystemFolderManager
       texture_pages: create_filepath('pack/texture_pages'),
       models: create_filepath('pack/models'),
       texture_files: create_filepath('output/texture_files'),
-      single_texture_files: create_filepath('output/texture_files/single'),
-      multiply_texture_files: create_filepath('output/texture_files/multiply')
+      dds_texture_files: create_filepath('output/texture_files/dds'),
+      tiff_texture_files: create_filepath('output/texture_files/tiff')
     }
 
     @files = {
@@ -67,6 +67,14 @@ class SystemFolderManager
       FileUtils.mkdir_p(value)
       puts "Directories '#{value}' created successfully."
     end
+  end
+
+  def dds_texture_file(name)
+    File.join(@paths[:dds_texture_files], name)
+  end
+
+  def tiff_texture_file(name)
+    File.join(@paths[:tiff_texture_files], name)
   end
 
   private

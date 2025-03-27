@@ -1,6 +1,5 @@
 require 'fileutils'
 require 'yaml'
-# require_relative '../utils'
 require_relative '../lib/system_folder_manager'
 require_relative '../lib/parser'
 

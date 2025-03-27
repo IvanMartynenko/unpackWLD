@@ -1,6 +1,5 @@
 require 'fileutils'
 require 'yaml'
-# require File.expand_path('utils')
 require_relative '../lib/system_folder_manager'
 require_relative '../lib/file_saver'
 require_relative '../lib/bindata_storer'
@@ -260,21 +259,21 @@ def pack(filepath)
           item_accumulator.push_int 0
         end
 
-        if value[:data][:mesh_anim]
-          value[:data][:mesh_anim].each do |anim|
-            item_accumulator.push_word 'ANIM'
-            item_accumulator.push_bool anim[:unknown_bool]
-            item_accumulator.push_int anim[:unknown_ints].size
-            item_accumulator.push_ints anim[:unknown_ints]
-            item_accumulator.push_floats anim[:unknown_floats]
-            item_accumulator.push_int anim[:unknown_size1]
-            item_accumulator.push_int anim[:unknown_size2]
-            item_accumulator.push_int anim[:unknown_size3]
-            item_accumulator.push_floats anim[:unknown_floats1]
-            item_accumulator.push_floats anim[:unknown_floats2]
-            item_accumulator.push_floats anim[:unknown_floats3]
-          end
-        end
+        # if value[:data][:mesh_anim]
+        #   value[:data][:mesh_anim].each do |anim|
+        #     item_accumulator.push_word 'ANIM'
+        #     item_accumulator.push_bool anim[:unknown_bool]
+        #     item_accumulator.push_int anim[:unknown_ints].size
+        #     item_accumulator.push_ints anim[:unknown_ints]
+        #     item_accumulator.push_floats anim[:unknown_floats]
+        #     item_accumulator.push_int anim[:unknown_size1]
+        #     item_accumulator.push_int anim[:unknown_size2]
+        #     item_accumulator.push_int anim[:unknown_size3]
+        #     item_accumulator.push_floats anim[:unknown_floats1]
+        #     item_accumulator.push_floats anim[:unknown_floats2]
+        #     item_accumulator.push_floats anim[:unknown_floats3]
+        #   end
+        # end
         item_accumulator.push_int 0
 
         if value[:data][:unknown_floats]

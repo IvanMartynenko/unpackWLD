@@ -42,7 +42,7 @@ class TexturePageParser
 
   def parse_texture
     {
-      filepath: @file.name,
+      filepath: @file.read_filename,
       box: {
         x0: @file.int,
         y0: @file.int,
@@ -309,7 +309,7 @@ class ModelParser
     token = @file.word
     if token.to_s == 'TXPG'
       res[:texture] = {
-        name: @file.name,
+        name: @file.read_filename,
         texture_page: @file.int,
         index_texture_on_page: @file.int,
         x0: @file.int,
@@ -318,7 +318,7 @@ class ModelParser
         y2: @file.int
       }
     elsif token.to_s == 'TEXT'
-      res[:text] = { name: @file.name }
+      res[:text] = { name: @file.read_filename }
     end
 
     res

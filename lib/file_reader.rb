@@ -16,6 +16,29 @@ class FileReader
     res.gsub(/\0/, '').force_encoding('Windows-1252').encode('UTF-8')
   end
 
+  def read_filename
+    res = ''
+    loop do
+      tmp = word
+      res += tmp
+      break if tmp.include? "\0"
+    end
+    res = res.gsub(/\0/, '').force_encoding('Windows-1252').encode('UTF-8')
+    return res
+    res.gsub!(/ß/, 'b')
+    res.gsub!(/ä/, 'a')
+    res.gsub!(/ö/, 'o')
+    res.gsub!(/ü/, 'u')
+    res.gsub!(/ÿ/, 'y')
+
+    ext = File.extname(res)
+    filename = res.split('\\').last
+    filename_without_ext = File.basename(filename, ext)
+    base = 'C:\\TheSting\\textures'
+    base += '\\NEW_TEXTURES' if res.downcase.include? '\\NEW_TEXTURES\\'.downcase
+    "#{base}\\#{filename_without_ext}.tif"
+  end
+
   def word
     read_raw_bytes(1).to_s
   end
