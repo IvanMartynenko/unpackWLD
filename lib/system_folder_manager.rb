@@ -26,10 +26,11 @@ class SystemFolderManager
       model_list_tree: create_filepath('pack/model_list_tree.yml'),
       object_list_tree: create_filepath('pack/object_list_tree.yml'),
       texture_pages: create_filepath('pack/texture_pages.yml'),
-      object_list: create_filepath('pack/object_list.bin'),
+      object_list: create_filepath('pack/object_list.yml'),
       macro_list: create_filepath('pack/macro_list.bin'),
-      world_tree: create_filepath('pack/world_tree.bin'),
-      models_info: create_filepath('pack/models_info.yml')
+      world_tree: create_filepath('pack/world_tree.yml'),
+      models_info: create_filepath('pack/models_info.yml'),
+      shadows: create_filepath('pack/shadows.yml')
     }
   end
 
@@ -37,7 +38,7 @@ class SystemFolderManager
     # Create the nested directories
     @paths.each_value do |value|
       FileUtils.mkdir_p(value)
-      puts "Directories '#{value}' created successfully."
+      # puts "Directories '#{value}' created successfully."
     end
   rescue StandardError => e
     puts "An error occurred: #{e.message}"
@@ -65,7 +66,7 @@ class SystemFolderManager
   def create_model_directories
     @models_tree.each do |value|
       FileUtils.mkdir_p(value)
-      puts "Directories '#{value}' created successfully."
+      # puts "Directories '#{value}' created successfully."
     end
   end
 
@@ -88,8 +89,8 @@ class SystemFolderManager
     res += yaml.map do |a|
       path = @paths[:models]
       tree = [a[:name]]
-      while a[:parent] != 1
-        a = yaml[a[:parent] - 2]
+      while a[:parent_iid] != 1
+        a = yaml[a[:parent_iid] - 2]
         tree.push(a[:name])
       end
       tree.reverse.each do |item|

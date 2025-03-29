@@ -20,6 +20,12 @@ class BindataStorer
   end
 
   def push_float(value)
+    if value.is_a? Array
+      raise StandardError, 'bad size of float' if value.size > 1
+
+      return push_float(value.first)
+    end
+
     if value.is_a? String
       @data.push [value].pack('H*')
     else

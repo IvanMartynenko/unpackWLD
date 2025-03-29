@@ -23,7 +23,11 @@ def pack_anim(yaml)
   accumulator.push_bool yaml[:unknown]
 
   keys = %i[translation scaling rotation]
-  keys.each { |key| accumulator.push_ints yaml[key][:sizes] }
+  keys.each do |key|
+    %i[x y z].each do |coord|
+      accumulator.push_int yaml[key][:values][coord] ? yaml[key][:values][coord].size : 0
+    end
+  end
 
   keys.each do |key|
     %i[x y z].each do |coord|
@@ -37,16 +41,119 @@ def pack_anim(yaml)
   accumulator.data
 end
 
-def parse_curve(sizes)
-  res = { values: {}, keys: {} }
-  coordinates = %i[x y z]
-  coordinates.each_with_index do |coord, idx|
-    res[:values][coord] = @file.floats(sizes[idx]) if sizes[idx] > 0
+# Write the INFO structure, which includes:
+#   bigendian_int -> info[:size]
+#   info[:unknow1], info[:unknow2], info[:unknow3]
+#   "OPTS" block, "COND" block, "TALI" block
+#
+def pack_info(acc, info_hash)
+  info_accumulator = BindataStorer.new
+  info = info_hash[:info]
+  # acc.push_bigendian_int info[:size]
+  info_accumulator.push_int info[:unknow1]
+  info_accumulator.push_int info[:unknow2]
+  info_accumulator.push_int info[:unknow3]
+
+  # Next the "OPTS" block
+  opts_accumulator = BindataStorer.new
+  opts = info_hash[:opts]
+  # opts_accumulator.push_word 'OPTS'
+  # acc.push_bigendian_int opts[:size]
+  opts_accumulator.push_int opts[:unknow1]
+  opts_accumulator.push_name opts[:id]
+  opts_accumulator.push_int opts[:type]
+  opts_accumulator.push_int opts[:story]
+  opts_accumulator.push_negative_bool opts[:clickable]
+  opts_accumulator.push_negative_bool opts[:process_when_visible]
+  opts_accumulator.push_negative_bool opts[:process_always]
+
+  # The parser calls parse_item(type) here, so we do the “reverse” and push the item fields:
+  pack_item_for_type(opts_accumulator, opts[:type], opts[:info])
+  opts_data = opts_accumulator.data
+  info_accumulator.push_word 'OPTS'
+  info_accumulator.push_size opts_data.size
+  info_accumulator.push opts_data
+
+  # After we finish "OPTS", we should see "COND" block
+  cond = info_hash[:cond]
+  info_accumulator.push_word 'COND'
+  d = cond[:data].pack('H*')
+  info_accumulator.push_size d.size
+  info_accumulator.push d
+
+  # Next "TALI"
+  tali = info_hash[:tali]
+  info_accumulator.push_word 'TALI'
+  d = tali[:data].pack('H*')
+  info_accumulator.push_size d.size
+  info_accumulator.push d
+
+  # Finally the parser expects 'END ' after TALI in InfoParser
+  info_accumulator.push 'END '
+  info_accumulator.push_int 0
+  data = info_accumulator.data
+  acc.push_word 'INFO'
+  acc.push_size data.size
+  acc.push data
+end
+
+#
+# Pack the :info sub-block from parse_item(type). See InfoParser#parse_item
+#
+def pack_item_for_type(acc, type, item_info)
+  case type
+  when 0
+    # type=0 (Item) => weight only
+    acc.push_float item_info[:weight]
+  when 1
+    # type=1 => weight, value
+    acc.push_float item_info[:weight]
+    acc.push_float item_info[:value]
+  when 2
+    # type=2 => weight, value, strength, pick_locks, pick_safes, alarm_systems, volume, damaging
+    #          applicability floats, noise floats
+    acc.push_float item_info[:weight]
+    acc.push_float item_info[:value]
+    acc.push_float item_info[:strength]
+    acc.push_float item_info[:pick_locks]
+    acc.push_float item_info[:pick_safes]
+    acc.push_float item_info[:alarm_systems]
+    acc.push_float item_info[:volume]
+    acc.push_negative_bool item_info[:damaging]
+
+    acc.push_float item_info[:applicability][:glas]
+    acc.push_float item_info[:applicability][:wood]
+    acc.push_float item_info[:applicability][:steel]
+    acc.push_float item_info[:applicability][:hightech]
+
+    acc.push_float item_info[:noise][:glas]
+    acc.push_float item_info[:noise][:wood]
+    acc.push_float item_info[:noise][:steel]
+    acc.push_float item_info[:noise][:hightech]
+  when 3, 7, 8
+    # 3 => Immobilie, or 7 => Tuer, or 8 => Fenster
+    # all have: working_time, material, crack_type
+    acc.push_float item_info[:working_time]
+    acc.push_int   item_info[:material]
+    acc.push_int   item_info[:crack_type]
+  when 4
+    # type=4 => Character A => speed (float), occupation (string)
+    acc.push_float item_info[:speed]
+    acc.push_name  item_info[:occupation]
+    # If you also store skillfulness, push it here if needed
+  when 5, 6
+    # type=5 => Character B, or type=6 => Character C => speed
+    acc.push_float item_info[:speed]
+  when 9
+    # type=9 => Car => transp_space, max_speed, acceleration, value, driving
+    acc.push_float item_info[:transp_space]
+    acc.push_float item_info[:max_speed]
+    acc.push_float item_info[:acceleration]
+    acc.push_float item_info[:value]
+    acc.push_float item_info[:driving]
+  else
+    raise "Unknown type: #{type}"
   end
-  coordinates.each_with_index do |coord, idx|
-    res[:keys][coord] = @file.ints(sizes[idx]) if sizes[idx] > 0
-  end
-  res
 end
 
 def pack(filepath)
@@ -59,12 +166,13 @@ def pack(filepath)
   # SAVE TEXTURES
   file.write_word('TEXP')
   file.write_zero
+  current_time = Time.now
 
   textures_info = YAML.load_file(folder_manager.files[:texture_pages])
   textures_info.each do |info|
     data = BindataStorer.new
 
-    texture_file_path = folder_manager.texture_page_path info['index']
+    texture_file_path = folder_manager.texture_page_path info['iid']
     texture_file = File.binread texture_file_path
     texture_file_pixels = texture_file[128..]
     image_height = texture_file[(4 * 4)..(4 * 4) + 3].unpack1('V')
@@ -95,13 +203,15 @@ def pack(filepath)
     file.write_int 2
     file.write_int info['width'] * scale
     file.write_int info['height'] * scale
-    file.write_int info['index']
+    file.write_int info['iid']
     file.write_int info['textures'].size
     file.write(header)
     file.write(texture_file_pixels)
   end
   file.write_end_word # END
   file.write_zero
+  puts Time.now - current_time
+  current_time = Time.now
 
   # SAVE ModelListTree, ObjectListTree
   model_list_items = [
@@ -120,7 +230,7 @@ def pack(filepath)
       accumulator.push_int 0
       accumulator.push_name item[:name]
       # accumulator.push_int item['index']
-      accumulator.push_int item[:parent]
+      accumulator.push_int item[:parent_iid]
       data = accumulator.data
 
       file.write_word 'ENTR'
@@ -130,6 +240,8 @@ def pack(filepath)
     file.write_end_word
     file.write_zero
   end
+  puts Time.now - current_time
+  current_time = Time.now
 
   # SAVE MODELS
   file.write_word 'LIST'
@@ -139,7 +251,7 @@ def pack(filepath)
   models_info.each do |info|
     accumulator = BindataStorer.new
     accumulator.push_int 9
-    accumulator.push_int info[:id]
+    accumulator.push_int 1
     accumulator.push_name info[:name]
     accumulator.push_negative_bool info[:influences_camera]
     accumulator.push_negative_bool info[:no_camera_check]
@@ -159,30 +271,40 @@ def pack(filepath)
       accumulator.push_int 0
     end
 
-    accumulator.push_int info[:parent_folder]
-    accumulator.push_int info[:attack_points].size
-    info[:attack_points].each do |val|
-      accumulator.push_float val[:x]
-      accumulator.push_float val[:y]
-      accumulator.push_float val[:z]
-      accumulator.push_float val[:radius]
+    accumulator.push_int info[:parent_folder_iid]
+    if info[:attack_points]
+      accumulator.push_int info[:attack_points].size
+      info[:attack_points].each do |val|
+        accumulator.push_float val[:x]
+        accumulator.push_float val[:y]
+        accumulator.push_float val[:z]
+        accumulator.push_float val[:radius]
+      end
+    else
+      accumulator.push_int 0
     end
 
     accumulator.push 'NMF '
     accumulator.push_int 0
     model_file = deep_symbolize_keys YAML.load_file(folder_manager.model_path(info[:name], info[:index],
-                                                                              info[:parent_folder]))
+                                                                              info[:parent_folder_iid]))
     model_file.sort_by { |t| t[:index] }.each do |value|
       item_accumulator = BindataStorer.new
       # item_accumulator.push_word value[:word]
-      item_accumulator.push_int value[:type]
-      item_accumulator.push_int value[:parent]
-      item_accumulator.push_name value[:name]
       case value[:word]
       when 'ROOT'
+        item_accumulator.push_int 2
+        item_accumulator.push_int value[:parent_iid]
+        item_accumulator.push_name value[:name]
         item_accumulator.push value[:data][:data].pack('H*')
       when 'LOCA'
+        item_accumulator.push_int 0
+        item_accumulator.push_int value[:parent_iid]
+        item_accumulator.push_name value[:name]
       when 'FRAM'
+        item_accumulator.push_int 2
+        item_accumulator.push_int value[:parent_iid]
+        item_accumulator.push_name value[:name]
         item_accumulator.push_floats value[:data][:matrix].flatten
         keys = %i[translation scaling rotation rotate_pivot_translate rotate_pivot scale_pivot_translate
                   scale_pivot shear]
@@ -193,6 +315,9 @@ def pack(filepath)
           item_accumulator.push_int 0
         end
       when 'JOIN'
+        item_accumulator.push_int 2
+        item_accumulator.push_int value[:parent_iid]
+        item_accumulator.push_name value[:name]
         item_accumulator.push_floats value[:data][:matrix].flatten
         keys = %i[translation scaling rotation]
         keys.each { |key| item_accumulator.push_floats value[:data][key] }
@@ -205,6 +330,9 @@ def pack(filepath)
           item_accumulator.push_int 0
         end
       when 'MESH'
+        item_accumulator.push_int 14
+        item_accumulator.push_int value[:parent_iid]
+        item_accumulator.push_name value[:name]
         item_accumulator.push_int value[:data][:tnum]
         item_accumulator.push_int value[:data][:vnum]
         item_accumulator.push_floats value[:data][:vbuf].flatten
@@ -259,25 +387,26 @@ def pack(filepath)
           item_accumulator.push_int 0
         end
 
-        # if value[:data][:mesh_anim]
-        #   value[:data][:mesh_anim].each do |anim|
-        #     item_accumulator.push_word 'ANIM'
-        #     item_accumulator.push_bool anim[:unknown_bool]
-        #     item_accumulator.push_int anim[:unknown_ints].size
-        #     item_accumulator.push_ints anim[:unknown_ints]
-        #     item_accumulator.push_floats anim[:unknown_floats]
-        #     item_accumulator.push_int anim[:unknown_size1]
-        #     item_accumulator.push_int anim[:unknown_size2]
-        #     item_accumulator.push_int anim[:unknown_size3]
-        #     item_accumulator.push_floats anim[:unknown_floats1]
-        #     item_accumulator.push_floats anim[:unknown_floats2]
-        #     item_accumulator.push_floats anim[:unknown_floats3]
-        #   end
-        # end
+        if value[:data][:mesh_anim]
+          value[:data][:mesh_anim].each do |anim|
+            item_accumulator.push_word 'ANIM'
+            item_accumulator.push_bool anim[:unknown_bool]
+            item_accumulator.push_int anim[:unknown_ints].size
+            item_accumulator.push_ints anim[:unknown_ints]
+            item_accumulator.push_floats anim[:unknown_floats]
+            item_accumulator.push_int anim[:unknown_size1]
+            item_accumulator.push_int anim[:unknown_size2]
+            item_accumulator.push_int anim[:unknown_size3]
+            item_accumulator.push_floats anim[:unknown_floats1]
+            item_accumulator.push_floats anim[:unknown_floats2]
+            item_accumulator.push_floats anim[:unknown_floats3]
+          end
+        end
         item_accumulator.push_int 0
 
         if value[:data][:unknown_floats]
-          item_accumulator.push_int value[:data][:unknown_count_of_floats]
+          # item_accumulator.push_int value[:data][:unknown_count_of_floats]
+          item_accumulator.push_int value[:data][:unknown_floats].size / 3
           item_accumulator.push_floats value[:data][:unknown_floats]
         else
           item_accumulator.push_int 0
@@ -306,16 +435,57 @@ def pack(filepath)
 
   file.write_end_word
   file.write_zero
+  puts Time.now - current_time
+  current_time = Time.now
 
   # SAVE Objects
   file.write_word 'OBJS'
   file.write_zero
 
-  f = File.binread(folder_manager.files[:object_list])
-  file.write(f)
+  objects_info = deep_symbolize_keys(YAML.load_file(folder_manager.files[:object_list]))
+  # For each object in the data
+  objects_info.each do |object|
+    accumulator = BindataStorer.new
+
+    # Object header fields
+    accumulator.push_int object[:type]
+    accumulator.push_name object[:name]
+    accumulator.push_int object[:parent_folder]       # parser reads parent_folder directly
+    accumulator.push_int object[:unknow2].size        # count_of_unknow2
+
+    # Write each :unknow2 entry
+    object[:unknow2].each do |u2|
+      accumulator.push_name u2[:name]
+      accumulator.push_int  u2[:unknow1]
+      accumulator.push_float u2[:unknow2]
+      accumulator.push_float u2[:unknow3]
+      accumulator.push_int   u2[:unknow4]
+      accumulator.push_float u2[:alway_negative100]
+      accumulator.push_negative_bool u2[:unknow5]
+      accumulator.push_negative_bool u2[:unknow6]
+
+      accumulator.push_int u2[:unknow7].size
+      u2[:unknow7].each do |u7|
+        accumulator.push_name u7[:name]
+        accumulator.push_float u7[:unknow1]
+      end
+    end
+
+    # Write INFO block
+    # accumulator.push_word 'INFO'
+    pack_info(accumulator, object[:info])
+
+    # Write 'END ' block for each object is done by the parser after 'INFO' -> 'COND' -> 'TALI'
+    data = accumulator.data
+    file.write_word 'OBJ '
+    file.write_size data.size
+    file.write data
+  end
 
   file.write_end_word
   file.write_zero
+  puts Time.now - current_time
+  current_time = Time.now
 
   # SAVE MAKL
   file.write_word 'MAKL'
@@ -327,14 +497,96 @@ def pack(filepath)
   file.write_word 'TREE'
   file.write_zero
 
-  f = File.binread(folder_manager.files[:world_tree])
-  file.write(f)
+  world_nodes = deep_symbolize_keys(YAML.load_file(folder_manager.files[:world_tree]))
+  tmp_shadows = deep_symbolize_keys(YAML.load_file(folder_manager.files[:shadows]))
+  shadow = Array.new(tmp_shadows.last[:index] + 1)
+  tmp_shadows.each { |t| shadow[t[:index]] = t }
+  world_nodes.each do |node|
+    accumulator = BindataStorer.new
+    # accumulator.push_word 'NODE'
+    accumulator.push_int 15
+    accumulator.push_int node[:parent_iid]
+    accumulator.push_name node[:folder_name]
+    # Если в ноде уже задан ключ :index – используем его, иначе подставляем порядковый номер.
+    # accumulator.push_int(node[:index])
+    accumulator.push_float node[:x]
+    accumulator.push_float node[:y]
+    accumulator.push_float node[:z]
+    accumulator.push_float node[:w]
+    accumulator.push_float node[:n]
+    accumulator.push_float node[:u]
+    accumulator.push_int node[:unknow1]
+    accumulator.push_int node[:type]
+
+    case node[:type]
+    when 0 # folder
+      # Ожидается массив из 4 целых чисел
+      node[:folder].each { |val| accumulator.push_int val }
+    when 1 # ground
+      ground = node[:ground]
+      accumulator.push_int node[:model_id]
+      if ground[:connections]
+        accumulator.push_int ground[:connections].size
+        ground[:connections].each do |conn|
+          accumulator.push_int conn[0]
+          accumulator.push_int conn[1]
+        end
+      else
+        accumulator.push_int 0
+      end
+      accumulator.push_int ground[:unknow2]
+      shad = shadow[node[:index]]
+      if shad
+        accumulator.push_word 'SHAD'
+        accumulator.push_int shad[:shad][:size1]
+        accumulator.push_int shad[:shad][:size2]
+        shad[:shad][:data].each do |f|
+          accumulator.push_float f
+        end
+      else
+        accumulator.push_int 0
+      end
+    when 2 # item
+      item_block = node[:item]
+      accumulator.push_int node[:object_id]
+      accumulator.push_int item_block[:unknow_zero]
+      if item_block.key?(:info)
+        # accumulator.push_word 'INFO'
+        info_accumulator = BindataStorer.new
+        pack_info(info_accumulator, item_block[:info])
+        accumulator.push info_accumulator.data
+        # accumulator.push_size info_accumulator.data.size
+        # accumulator.push info_accumulator.data
+      else
+        accumulator.push_int 0
+      end
+      accumulator.push_int item_block[:unknow_zero2]
+    when 3 # sun
+      light = node[:light]
+      accumulator.push_int light[:unknow1]
+      light[:unknow_floats11].each { |f| accumulator.push_float f }
+      accumulator.push_int light[:unknow2]
+      light[:unknow_floats13].each { |f| accumulator.push_float f }
+      accumulator.push_int light[:unknow3]
+      accumulator.push_int light[:unknow4]
+      accumulator.push_int light[:unknow5]
+      accumulator.push_int light[:unknow6]
+    else
+      raise "Unknown node type: #{node[:type]}"
+    end
+
+    data = accumulator.data
+    file.write_word 'NODE'
+    file.write_size data.size
+    file.write data
+  end
 
   file.write_end_word
   file.write_zero
 
   file.write_eof_word
   file.write_zero
+  puts Time.now - current_time
 
   file.close
 end

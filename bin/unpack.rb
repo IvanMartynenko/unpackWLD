@@ -5,18 +5,6 @@ require_relative '../lib/parser'
 
 DDS_MAGIC = 0x20534444
 
-def convert_folder(yaml)
-  yaml.map do |a|
-    str = a[:name]
-
-    while a[:parent] != 1
-      a = yaml[a[:parent] - 2]
-      str = a[:name] + '/' + str
-    end
-    str
-  end
-end
-
 # TEXTURES
 def init_dds_header(width, height, is_alpha)
   header = {}
@@ -122,16 +110,46 @@ def unpack(filepath)
   file&.write deep_stringify_keys(parser.object_list_tree).to_yaml
   file.close
 
-  write_binary(folder_manager.files[:object_list], parser.objects, 'OBJ ')
-  write_binary(folder_manager.files[:macro_list], parser.macros, 'OBJ ')
-  write_binary(folder_manager.files[:world_tree], parser.word_tree, 'NODE')
+  file = File.open(folder_manager.files[:object_list], 'w')
+  file&.write deep_stringify_keys(parser.objects).to_yaml
+  file.close
+
+  # file = File.open(folder_manager.files[:world_tree], 'w')
+  # file&.write deep_stringify_keys(parser.word_tree).to_yaml
+  # file.close
+  new_array = parser.word_tree.map do |hash|
+    new_hash = hash[:shad] ? hash.dup : hash
+    new_hash.delete(:shad)
+    if new_hash[:object_id]
+      new_hash[:object_name] = parser.objects.select { |t| t[:index] == new_hash[:object_id] }.first[:name]
+    end
+    if new_hash[:model_id]
+      new_hash[:model_name] = parser.models.select { |t| t[:index] == new_hash[:model_id] }.first[:name]
+    end
+    new_hash
+  end
+  file = File.open(folder_manager.files[:world_tree], 'w')
+  file&.write deep_stringify_keys(new_array).to_yaml
+  file.close
+
+  new_array = parser.word_tree.map do |hash|
+    { index: hash[:index], shad: hash[:shad] } if hash[:shad]
+  end
+  new_array.compact!
+  file = File.open(folder_manager.files[:shadows], 'w')
+  file&.write deep_stringify_keys(new_array).to_yaml
+  file.close
+
+  # write_binary(folder_manager.files[:object_list], parser.objects, 'OBJ ')
+  # write_binary(folder_manager.files[:macro_list], parser.macros, 'OBJ ')
+  # write_binary(folder_manager.files[:world_tree], parser.word_tree, 'NODE')
 
   # SAVE TEXTURES
   file = File.open(folder_manager.files[:texture_pages], 'w')
   if file
     hash = parser.texture_pages.map do |p|
       {
-        index: p[:index],
+        iid: p[:iid],
         width: p[:width],
         height: p[:height],
         is_alpha: p[:is_alpha],
@@ -149,11 +167,11 @@ def unpack(filepath)
   file.close
 
   parser.texture_pages.each do |page|
-    file = File.open(folder_manager.texture_page_path(page[:index]), 'wb')
+    file = File.open(folder_manager.texture_page_path(page[:iid]), 'wb')
     if file
       dds_header = save_to_binary_file(init_dds_header(page[:width], page[:height], page[:is_alpha])).join
       file.write(dds_header)
-      file.write(page[:binary_data].pack('H*'))
+      file.write(page[:image_binary].pack('H*'))
     end
     file.close
   end
@@ -169,7 +187,7 @@ def unpack(filepath)
   file.close
 
   parser.models.each do |model|
-    file = File.open(folder_manager.model_path(model[:name], model[:index], model[:parent_folder]), 'w')
+    file = File.open(folder_manager.model_path(model[:name], model[:index], model[:parent_folder_iid]), 'w')
     file&.write(deep_stringify_keys(model[:nmf]).to_yaml)
     file.close
   end
