@@ -76,6 +76,18 @@ class BindataStorer
     @data.push value
   end
 
+  def push_end_word
+    @data.push [0x454E4420].pack('N')
+  end
+
+  def push_eof_word
+    @data.push [0x454F4620].pack('N')
+  end
+
+  def push_zero
+    @data.push [0].pack('V')
+  end
+
   def data
     @data.flatten.join
   end

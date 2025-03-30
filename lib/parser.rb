@@ -132,7 +132,9 @@ class ModelParser
         { x: @file.float, y: @file.float, z: @file.float, radius: @file.float }
       end
     end
+    # time = Time.now
     model_info[:nmf] = parse_nmf
+    # puts Time.now - time
 
     model_info
   end
@@ -568,18 +570,18 @@ class WorldParser
   end
 
   def parse
-    nodes = []
+    nodes = {}
     token = @file.token
     return nodes if token == 'END '
     raise StandardError, "Bad parse WORLD. Expected 'NODE', got '#{token}'" unless token == 'NODE'
 
     index = 2
     while token == 'NODE'
+      @file.int # skip value 15
       item = {
-        type15: @file.int,
-        parent_iid: @file.int,
+        parent_iid: @file.int.to_s,
         folder_name: @file.name,
-        index:,
+        # index:,
         x: @file.float,
         y: @file.float,
         z: @file.float,
@@ -592,11 +594,12 @@ class WorldParser
 
       case item[:type]
       when 0 # folder
-        item[:folder] = []
-        item[:folder].push @file.int
-        item[:folder].push @file.int
-        item[:folder].push @file.int
-        item[:folder].push @file.int
+        @file.ints(4)
+        # item[:folder] = []
+        # item[:folder].push @file.int
+        # item[:folder].push @file.int
+        # item[:folder].push @file.int
+        # item[:folder].push @file.int
       when 1 # ground
         item[:model_id] = @file.int
         item[:model_name] = nil
@@ -608,7 +611,7 @@ class WorldParser
             item[:ground][:connections].push [@file.int, @file.int]
           end
         end
-        item[:ground][:unknow2] = @file.int
+        @file.int # skip zero
         shad = @file.word
         if shad == 'SHAD'
           item[:shad] = {}
@@ -649,7 +652,7 @@ class WorldParser
         item[:light][:unknow6] = @file.int
       end
 
-      nodes << item
+      nodes[index.to_s] = item
 
       index += 1
       token = @file.token
@@ -673,7 +676,7 @@ class Parser
   end
 
   def processed
-    if @file.token != 'WRLD'
+    if token = @file.token != 'WRLD'
       @file.close
       raise StandardError, "Opened file is not a 'The Sting!' game file. Expected 'WRLD', got '#{token}'"
     end
@@ -684,23 +687,33 @@ class Parser
       case token
       when 'TEXP'
         # puts "Texture Pages\t\treading..."
+        time = Time.now
         @texture_pages = TexturePageParser.new(@file).parse
+        puts "End parsing TexturePage. Times: #{Time.now - time}"
         # puts "Texture Pages\t\tend reading"
       when 'GROU'
         # puts "Model List Tree\t\treading..."
+        time = Time.now
         @model_list_tree = TreeParser.new(@file, 'Model List Tree').parse
+        puts "End parsing GROU. Times: #{Time.now - time}"
         # puts "Model List Tree\t\tend reading"
       when 'OBGR'
         # puts "Object List Tree\treading..."
+        time = Time.now
         @object_list_tree = TreeParser.new(@file, 'Object List Tree').parse
+        puts "End parsing OBGR. Times: #{Time.now - time}"
         # puts "Object List Tree\t\tend reading"
       when 'LIST'
         # puts "Model List\t\treading..."
+        time = Time.now
         @models = ModelParser.new(@file).parse
+        puts "End parsing ModelParser. Times: #{Time.now - time}"
         # puts "Model List\t\tend reading"
       when 'OBJS'
         # puts "Object List\t\treading..."
+        time = Time.now
         @objects = ObjectParser.new(@file).parse
+        puts "End parsing ObjectParser. Times: #{Time.now - time}"
         # parse_obj
         # puts "Object List\t\tend reading"
       when 'MAKL'
@@ -709,7 +722,9 @@ class Parser
         # puts "Makro List\t\tend reading"
       when 'TREE'
         # puts "World Tree\t\treading..."
+        time = Time.now
         @word_tree = WorldParser.new(@file).parse
+        puts "End parsing WorldParser. Times: #{Time.now - time}"
         # puts "World Tree\t\tend reading"
       when 'EOF '
         @file.close

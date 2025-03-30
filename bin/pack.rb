@@ -1,5 +1,5 @@
 require 'fileutils'
-require 'yaml'
+require 'json'
 require_relative '../lib/system_folder_manager'
 require_relative '../lib/file_saver'
 require_relative '../lib/bindata_storer'
@@ -17,24 +17,24 @@ def deep_symbolize_keys(hash)
   end
 end
 
-def pack_anim(yaml)
+def pack_anim(item)
   accumulator = BindataStorer.new
   accumulator.push_word 'ANIM'
-  accumulator.push_bool yaml[:unknown]
+  accumulator.push_bool item[:unknown]
 
   keys = %i[translation scaling rotation]
   keys.each do |key|
     %i[x y z].each do |coord|
-      accumulator.push_int yaml[key][:values][coord] ? yaml[key][:values][coord].size : 0
+      accumulator.push_int item[key][:values][coord] ? item[key][:values][coord].size : 0
     end
   end
 
   keys.each do |key|
     %i[x y z].each do |coord|
-      accumulator.push_floats yaml[key][:values][coord] if yaml[key][:values][coord]
+      accumulator.push_floats item[key][:values][coord] if item[key][:values][coord]
     end
     %i[x y z].each do |coord|
-      accumulator.push_ints yaml[key][:keys][coord] if yaml[key][:keys][coord]
+      accumulator.push_ints item[key][:keys][coord] if item[key][:keys][coord]
     end
   end
 
@@ -158,17 +158,18 @@ end
 
 def pack(filepath)
   folder_manager = SystemFolderManager.new(filepath)
-  file = FileSaver.new(folder_manager.pack_file_path)
+  file = BindataStorer.new
+  # FileSaver.new(folder_manager.pack_file_path)
 
-  file.write_word('WRLD')
-  file.write_zero
+  file.push_word('WRLD')
+  file.push_zero
 
   # SAVE TEXTURES
-  file.write_word('TEXP')
-  file.write_zero
-  current_time = Time.now
+  file.push_word('TEXP')
+  file.push_zero
+  start_time = Time.now
 
-  textures_info = YAML.load_file(folder_manager.files[:texture_pages])
+  textures_info = JSON.parse(File.read(folder_manager.files[:texture_pages]))
   textures_info.each do |info|
     data = BindataStorer.new
 
@@ -198,20 +199,18 @@ def pack(filepath)
 
     header = data.data
 
-    file.write_word 'PAGE'
-    file.write_size header.size + texture_file_pixels.size + 20
-    file.write_int 2
-    file.write_int info['width'] * scale
-    file.write_int info['height'] * scale
-    file.write_int info['iid']
-    file.write_int info['textures'].size
-    file.write(header)
-    file.write(texture_file_pixels)
+    file.push_word 'PAGE'
+    file.push_size header.size + texture_file_pixels.size + 20
+    file.push_int 2
+    file.push_int info['width'] * scale
+    file.push_int info['height'] * scale
+    file.push_int info['iid']
+    file.push_int info['textures'].size
+    file.push(header)
+    file.push(texture_file_pixels)
   end
-  file.write_end_word # END
-  file.write_zero
-  puts Time.now - current_time
-  current_time = Time.now
+  file.push_end_word # END
+  file.push_zero
 
   # SAVE ModelListTree, ObjectListTree
   model_list_items = [
@@ -219,10 +218,10 @@ def pack(filepath)
     ['OBGR', :object_list_tree]
   ]
   model_list_items.each do |marker, file_key|
-    file.write_word marker
-    file.write_zero
+    file.push_word marker
+    file.push_zero
 
-    model_list_tree = deep_symbolize_keys(YAML.load_file(folder_manager.files[file_key]))
+    model_list_tree = JSON.parse(File.read(folder_manager.files[file_key]), symbolize_names: true)
     folder_manager.push_model_directories(model_list_tree) if file_key == :model_list_tree
     model_list_tree.sort_by { |t| t[:index] }.each do |item|
       accumulator = BindataStorer.new
@@ -233,21 +232,19 @@ def pack(filepath)
       accumulator.push_int item[:parent_iid]
       data = accumulator.data
 
-      file.write_word 'ENTR'
-      file.write_size data.size
-      file.write data
+      file.push_word 'ENTR'
+      file.push_size data.size
+      file.push data
     end
-    file.write_end_word
-    file.write_zero
+    file.push_end_word
+    file.push_zero
   end
-  puts Time.now - current_time
-  current_time = Time.now
 
   # SAVE MODELS
-  file.write_word 'LIST'
-  file.write_zero
+  file.push_word 'LIST'
+  file.push_zero
 
-  models_info = deep_symbolize_keys(YAML.load_file(folder_manager.files[:models_info]))
+  models_info = JSON.parse(File.read(folder_manager.files[:models_info]), symbolize_names: true)
   models_info.each do |info|
     accumulator = BindataStorer.new
     accumulator.push_int 9
@@ -286,8 +283,8 @@ def pack(filepath)
 
     accumulator.push 'NMF '
     accumulator.push_int 0
-    model_file = deep_symbolize_keys YAML.load_file(folder_manager.model_path(info[:name], info[:index],
-                                                                              info[:parent_folder_iid]))
+    model_file = JSON.parse(File.read(folder_manager.model_path(info[:name], info[:index],
+                                                                info[:parent_folder_iid])), symbolize_names: true)
     model_file.sort_by { |t| t[:index] }.each do |value|
       item_accumulator = BindataStorer.new
       # item_accumulator.push_word value[:word]
@@ -428,21 +425,19 @@ def pack(filepath)
     accumulator.push_int 0
 
     data = accumulator.data
-    file.write_word 'MODL'
-    file.write_size data.size
-    file.write data
+    file.push_word 'MODL'
+    file.push_size data.size
+    file.push data
   end
 
-  file.write_end_word
-  file.write_zero
-  puts Time.now - current_time
-  current_time = Time.now
+  file.push_end_word
+  file.push_zero
 
   # SAVE Objects
-  file.write_word 'OBJS'
-  file.write_zero
+  file.push_word 'OBJS'
+  file.push_zero
 
-  objects_info = deep_symbolize_keys(YAML.load_file(folder_manager.files[:object_list]))
+  objects_info = JSON.parse(File.read(folder_manager.files[:object_list]), symbolize_names: true)
   # For each object in the data
   objects_info.each do |object|
     accumulator = BindataStorer.new
@@ -477,35 +472,33 @@ def pack(filepath)
 
     # Write 'END ' block for each object is done by the parser after 'INFO' -> 'COND' -> 'TALI'
     data = accumulator.data
-    file.write_word 'OBJ '
-    file.write_size data.size
-    file.write data
+    file.push_word 'OBJ '
+    file.push_size data.size
+    file.push data
   end
 
-  file.write_end_word
-  file.write_zero
-  puts Time.now - current_time
-  current_time = Time.now
+  file.push_end_word
+  file.push_zero
 
   # SAVE MAKL
-  file.write_word 'MAKL'
-  file.write_zero
-  file.write_end_word
-  file.write_zero
+  file.push_word 'MAKL'
+  file.push_zero
+  file.push_end_word
+  file.push_zero
 
   # SAVE World
-  file.write_word 'TREE'
-  file.write_zero
+  file.push_word 'TREE'
+  file.push_zero
 
-  world_nodes = deep_symbolize_keys(YAML.load_file(folder_manager.files[:world_tree]))
-  tmp_shadows = deep_symbolize_keys(YAML.load_file(folder_manager.files[:shadows]))
-  shadow = Array.new(tmp_shadows.last[:index] + 1)
-  tmp_shadows.each { |t| shadow[t[:index]] = t }
-  world_nodes.each do |node|
+  world_nodes = JSON.parse(File.read(folder_manager.files[:world_tree]), symbolize_names: true)
+  tmp_shadows = JSON.parse(File.read(folder_manager.files[:shadows]), symbolize_names: true)
+  shadow = Array.new(tmp_shadows.last[:index].to_i + 1)
+  tmp_shadows.each { |t| shadow[t[:index].to_i] = t }
+  world_nodes.each do |k, node|
     accumulator = BindataStorer.new
     # accumulator.push_word 'NODE'
     accumulator.push_int 15
-    accumulator.push_int node[:parent_iid]
+    accumulator.push_int node[:parent_iid].to_i
     accumulator.push_name node[:folder_name]
     # Если в ноде уже задан ключ :index – используем его, иначе подставляем порядковый номер.
     # accumulator.push_int(node[:index])
@@ -521,7 +514,7 @@ def pack(filepath)
     case node[:type]
     when 0 # folder
       # Ожидается массив из 4 целых чисел
-      node[:folder].each { |val| accumulator.push_int val }
+      accumulator.push_ints([0, 0, 0, 0])
     when 1 # ground
       ground = node[:ground]
       accumulator.push_int node[:model_id]
@@ -534,8 +527,8 @@ def pack(filepath)
       else
         accumulator.push_int 0
       end
-      accumulator.push_int ground[:unknow2]
-      shad = shadow[node[:index]]
+      accumulator.push_int 0
+      shad = shadow[k.to_s.to_i]
       if shad
         accumulator.push_word 'SHAD'
         accumulator.push_int shad[:shad][:size1]
@@ -576,19 +569,21 @@ def pack(filepath)
     end
 
     data = accumulator.data
-    file.write_word 'NODE'
-    file.write_size data.size
-    file.write data
+    file.push_word 'NODE'
+    file.push_size data.size
+    file.push data
   end
 
-  file.write_end_word
-  file.write_zero
+  file.push_end_word
+  file.push_zero
 
-  file.write_eof_word
-  file.write_zero
-  puts Time.now - current_time
+  file.push_eof_word
+  file.push_zero
+  puts "Pack end. Time: #{Time.now - start_time}"
 
-  file.close
+  File.open(folder_manager.pack_file_path, 'wb') do |f|
+    f << file.data
+  end
 end
 
 script_location = File.dirname(File.expand_path(__FILE__))

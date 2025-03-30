@@ -8,7 +8,7 @@ class SystemFolderManager
     else
       @filename = File.basename(filepath)
       filename_without_ext = File.basename(filepath, File.extname(filepath))
-      @unpack_dir = "#{filename_without_ext}_unpack"
+      @unpack_dir = File.join(File.dirname(filepath), "#{filename_without_ext}_unpack")
     end
 
     @paths = {
@@ -23,14 +23,15 @@ class SystemFolderManager
     }
 
     @files = {
-      model_list_tree: create_filepath('pack/model_list_tree.yml'),
-      object_list_tree: create_filepath('pack/object_list_tree.yml'),
-      texture_pages: create_filepath('pack/texture_pages.yml'),
-      object_list: create_filepath('pack/object_list.yml'),
+      model_list_tree: create_filepath('pack/model_list_tree.json'),
+      object_list_tree: create_filepath('pack/object_list_tree.json'),
+      texture_pages: create_filepath('pack/texture_pages.json'),
+      object_list: create_filepath('pack/object_list.json'),
       macro_list: create_filepath('pack/macro_list.bin'),
-      world_tree: create_filepath('pack/world_tree.yml'),
-      models_info: create_filepath('pack/models_info.yml'),
-      shadows: create_filepath('pack/shadows.yml')
+      world_tree: create_filepath('pack/world_tree.json'),
+      models_info: create_filepath('pack/models_info.json'),
+      shadows: create_filepath('pack/shadows.json'),
+      world_view: create_filepath('world_view.json')
     }
   end
 
@@ -51,7 +52,7 @@ class SystemFolderManager
   end
 
   def model_path(name, index, parent_folder_id)
-    fullname = "#{name}_#{index}.yml"
+    fullname = "#{name}_#{index}.json"
     File.join(@models_tree[parent_folder_id - 1], fullname)
   end
 

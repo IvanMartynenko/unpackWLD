@@ -1,8 +1,11 @@
 class FileReader
-  attr_reader :file
+  # attr_reader :file
 
   def initialize(filepath)
-    @file = File.open(filepath, 'rb')
+    time = Time.now
+    @file = File.binread(filepath)
+    puts "End reading binary data. Time: #{Time.now - time}"
+    @offset = 0
     raise StandardError, 'Can not open file' unless @file
   end
 
@@ -36,7 +39,7 @@ class FileReader
     size.times.map do |_|
       v = read_raw_bytes(1)
       value = v.unpack1('e*')
-      value.nan? ? v.unpack('H*') : value
+      value.nan? ? v.unpack('H*')[0] : value
     end
   end
 
@@ -96,19 +99,22 @@ class FileReader
   end
 
   def close
-    file.close
+    # file.close
   end
 
   def eof?
-    file.eof?
+    # file.eof?
+    @offset - 1 >= @file.size
   end
 
   def back
-    file.seek(-4, IO::SEEK_CUR)
+    # file.seek(-4, IO::SEEK_CUR)
+    @offset -= 4
   end
 
   def pos
-    file.pos
+    @offset
+    # file.pos
   end
 
   private
@@ -117,6 +123,7 @@ class FileReader
     size = count * data_size
     return '' if size.zero?
 
-    file.read(size)
+    @offset += size
+    @file[@offset - size..@offset - 1]
   end
 end

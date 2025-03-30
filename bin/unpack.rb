@@ -1,9 +1,10 @@
 require 'fileutils'
-require 'yaml'
+require 'json'
 require_relative '../lib/system_folder_manager'
 require_relative '../lib/parser'
 
 DDS_MAGIC = 0x20534444
+@threads = []
 
 # TEXTURES
 def init_dds_header(width, height, is_alpha)
@@ -70,19 +71,6 @@ def save_to_binary_file(header)
   binary_data
 end
 
-def deep_stringify_keys(hash)
-  if hash.is_a?(Hash)
-    hash.each_with_object({}) do |(key, value), result|
-      new_key = key.is_a?(Symbol) ? key.to_s : key
-      result[new_key] = value.is_a?(Array) ? value.map { |t| deep_stringify_keys(t) } : deep_stringify_keys(value)
-    end
-  elsif hash.is_a?(Array)
-    hash.map { |v| deep_stringify_keys(v) }
-  else
-    hash
-  end
-end
-
 def write_binary(filepath, items, separator)
   file = File.open(filepath, 'wb')
   items.each do |item|
@@ -93,104 +81,131 @@ def write_binary(filepath, items, separator)
   file.close
 end
 
+def write_json_file(filepath, data)
+  @threads << Thread.new do
+    time = Time.now
+    file = File.open(filepath, 'w')
+    file&.write JSON.pretty_generate(data)
+    file.close
+    puts "End save #{filepath}. Times: #{Time.now - time}"
+  end
+end
+
+def get_texture_pages_info(data)
+  data.map do |p|
+    p.reject { |key, _| key == :image_binary }
+  end
+end
+
+def save_dds_texture_page(folder_manager, page)
+  file = File.open(folder_manager.texture_page_path(page[:iid]), 'wb')
+  if file
+    dds_header = save_to_binary_file(init_dds_header(page[:width], page[:height], page[:is_alpha])).join
+    file.write(dds_header)
+    file.write(page[:image_binary].pack('H*'))
+  end
+  file.close
+end
+
+def world_withot_shadows(old_world, objects, models)
+  world = old_world.dup
+  world.each do |_key, new_hash|
+    new_hash.delete(:shad)
+    new_hash[:object_name] = objects[new_hash[:object_id] - 1][:name] if new_hash[:object_id]
+    new_hash[:model_name] = models[new_hash[:model_id] - 2][:name] if new_hash[:model_id]
+  end
+  world
+end
+
+def world_to_shadow(word)
+  word.filter_map do |key, hash|
+    { index: key, shad: hash[:shad] } if hash[:shad]
+  end
+end
+
+# A small helper to build a node with the appropriate name and an empty :child hash
+def build_node(value)
+  res = {}
+  %i[folder_name object_name model_name].each do |k|
+    res[:name] = value[k] if value[k]
+  end
+  res[:child] = {}
+  res
+  # # Pick the first of :folder_name, :object_name, :model_name that isn't nil
+  # name_key = %i[folder_name object_name model_name].find { |key| v[key] }
+  # {
+  #   name: name_key ? v[name_key] : nil,
+  #   child: {}
+  # }
+end
+
+def save_world_view(filepath, world)
+  res  = {}
+  path = {}
+
+  world.each do |k, v|
+    node = build_node(v)
+
+    if v[:parent_iid] == '1'
+      res[k.to_sym] = node
+    else
+      parent_id = v[:parent_iid].to_sym
+      # Attach this node to its parent's :child hash
+      path[parent_id][:child][k.to_sym] = node
+    end
+    path[k.to_sym] = node
+  end
+
+  write_json_file(filepath, res)
+end
+
 def unpack(filepath)
+  start_time = Time.now
   folder_manager = SystemFolderManager.new(filepath)
   folder_manager.create_directories
+  time = Time.now
   parser = Parser.new(filepath)
   parser.processed
+  puts "End parse file. Time: #{Time.now - time}"
 
   folder_manager.push_model_directories(parser.model_list_tree)
   folder_manager.create_model_directories
 
-  file = File.open(folder_manager.files[:model_list_tree], 'w')
-  file&.write deep_stringify_keys(parser.model_list_tree).to_yaml
-  file.close
+  write_json_file(folder_manager.files[:model_list_tree], parser.model_list_tree)
+  write_json_file(folder_manager.files[:object_list_tree], parser.object_list_tree)
+  write_json_file(folder_manager.files[:object_list], parser.objects)
 
-  file = File.open(folder_manager.files[:object_list_tree], 'w')
-  file&.write deep_stringify_keys(parser.object_list_tree).to_yaml
-  file.close
-
-  file = File.open(folder_manager.files[:object_list], 'w')
-  file&.write deep_stringify_keys(parser.objects).to_yaml
-  file.close
-
-  # file = File.open(folder_manager.files[:world_tree], 'w')
-  # file&.write deep_stringify_keys(parser.word_tree).to_yaml
-  # file.close
-  new_array = parser.word_tree.map do |hash|
-    new_hash = hash[:shad] ? hash.dup : hash
-    new_hash.delete(:shad)
-    if new_hash[:object_id]
-      new_hash[:object_name] = parser.objects.select { |t| t[:index] == new_hash[:object_id] }.first[:name]
-    end
-    if new_hash[:model_id]
-      new_hash[:model_name] = parser.models.select { |t| t[:index] == new_hash[:model_id] }.first[:name]
-    end
-    new_hash
-  end
-  file = File.open(folder_manager.files[:world_tree], 'w')
-  file&.write deep_stringify_keys(new_array).to_yaml
-  file.close
-
-  new_array = parser.word_tree.map do |hash|
-    { index: hash[:index], shad: hash[:shad] } if hash[:shad]
-  end
-  new_array.compact!
-  file = File.open(folder_manager.files[:shadows], 'w')
-  file&.write deep_stringify_keys(new_array).to_yaml
-  file.close
-
-  # write_binary(folder_manager.files[:object_list], parser.objects, 'OBJ ')
-  # write_binary(folder_manager.files[:macro_list], parser.macros, 'OBJ ')
-  # write_binary(folder_manager.files[:world_tree], parser.word_tree, 'NODE')
+  # save shadows
+  write_json_file(folder_manager.files[:shadows], world_to_shadow(parser.word_tree))
+  # save world
+  write_json_file(folder_manager.files[:world_tree],
+                  world_withot_shadows(parser.word_tree, parser.objects, parser.models))
+  save_world_view(folder_manager.files[:world_view], parser.word_tree)
 
   # SAVE TEXTURES
-  file = File.open(folder_manager.files[:texture_pages], 'w')
-  if file
-    hash = parser.texture_pages.map do |p|
-      {
-        iid: p[:iid],
-        width: p[:width],
-        height: p[:height],
-        is_alpha: p[:is_alpha],
-        textures: p[:textures].map do |t|
-          {
-            filepath: t[:filepath],
-            box: t[:box],
-            source_box: t[:source_box]
-          }
-        end
-      }
-    end
-    file.write(deep_stringify_keys(hash).to_yaml)
-  end
-  file.close
-
-  parser.texture_pages.each do |page|
-    file = File.open(folder_manager.texture_page_path(page[:iid]), 'wb')
-    if file
-      dds_header = save_to_binary_file(init_dds_header(page[:width], page[:height], page[:is_alpha])).join
-      file.write(dds_header)
-      file.write(page[:image_binary].pack('H*'))
-    end
-    file.close
+  @threads << Thread.new do
+    write_json_file(folder_manager.files[:texture_pages], get_texture_pages_info(parser.texture_pages))
+    parser.texture_pages.each { |page| save_dds_texture_page(folder_manager, page) }
   end
 
   # MODELS
-  file = File.open(folder_manager.files[:models_info], 'w')
-  if file
-    hash = parser.models.map do |p|
-      p.except(:nmf)
-    end
-    file.write(deep_stringify_keys(hash).to_yaml)
+  @threads << Thread.new do
+    hash = parser.models.map { |p| p.except(:nmf) }
+    write_json_file(folder_manager.files[:models_info], hash)
   end
-  file.close
 
-  parser.models.each do |model|
-    file = File.open(folder_manager.model_path(model[:name], model[:index], model[:parent_folder_iid]), 'w')
-    file&.write(deep_stringify_keys(model[:nmf]).to_yaml)
-    file.close
+  # save models files
+  time = Time.now
+  @threads << Thread.new do
+    parser.models.each do |model|
+      file = File.open(folder_manager.model_path(model[:name], model[:index], model[:parent_folder_iid]), 'w')
+      file&.write(JSON.pretty_generate(model[:nmf]))
+      file.close
+    end
   end
+  @threads.each(&:join)
+  puts "End save model files. Times: #{Time.now - time}"
+  puts "Total times: #{Time.now - start_time}"
 end
 
 script_location = File.dirname(File.expand_path(__FILE__))
