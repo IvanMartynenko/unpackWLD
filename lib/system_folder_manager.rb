@@ -1,3 +1,5 @@
+require 'fileutils'
+
 class SystemFolderManager
   attr_reader :paths, :files
 
@@ -30,7 +32,7 @@ class SystemFolderManager
       macro_list: create_filepath('pack/macro_list.bin'),
       world_tree: create_filepath('pack/world_tree.json'),
       models_info: create_filepath('pack/models_info.json'),
-      shadows: create_filepath('pack/shadows.json'),
+      shadows: create_filepath('pack/shadows.bin'),
       world_view: create_filepath('world_view.json')
     }
   end
@@ -39,7 +41,6 @@ class SystemFolderManager
     # Create the nested directories
     @paths.each_value do |value|
       FileUtils.mkdir_p(value)
-      # puts "Directories '#{value}' created successfully."
     end
   rescue StandardError => e
     puts "An error occurred: #{e.message}"
@@ -52,7 +53,7 @@ class SystemFolderManager
   end
 
   def model_path(name, index, parent_folder_id)
-    fullname = "#{name}_#{index}.json"
+    fullname = "#{name}_#{index}.nmf"
     File.join(@models_tree[parent_folder_id - 1], fullname)
   end
 
@@ -67,7 +68,6 @@ class SystemFolderManager
   def create_model_directories
     @models_tree.each do |value|
       FileUtils.mkdir_p(value)
-      # puts "Directories '#{value}' created successfully."
     end
   end
 
@@ -90,8 +90,8 @@ class SystemFolderManager
     res += yaml.map do |a|
       path = @paths[:models]
       tree = [a[:name]]
-      while a[:parent_iid] != 1
-        a = yaml[a[:parent_iid] - 2]
+      while a[:parent_folder_id] != 1
+        a = yaml[a[:parent_folder_id] - 2]
         tree.push(a[:name])
       end
       tree.reverse.each do |item|

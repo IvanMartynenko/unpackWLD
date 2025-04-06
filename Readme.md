@@ -160,7 +160,7 @@ Same of Model List Tree.
 | parent_folder_iid       | int                        | Parent folder IID from the Model List Tree.                                |
 | count_of_attack_points  | int                        | Number of `attack_points` entries.                                         |
 | array of attack_points  | struct attack_points[]     | Array of `attack_points` structs. Present if count > 0.                    |
-| NMF                     | struct NMF          | 3D model data (NMF format).                                                |
+| NMF                     | struct NMF                 | 3D model data (NMF format).                                                |
 
 
 ---
@@ -196,26 +196,125 @@ Same of Model List Tree.
 
 ### Struct NMF ROOT
 
-| Fiel                         | Size                           | Description                                                             |
-|------------------------------|---------------------------------|-------------------------------------------------------------------------|
-| ROOT                         | const char[4]                   | Root struct indicator. Always `ROOT`.                                   |
-| size                    | int                        | Binary size of struct, stored in Big-Endian format.                |
-| 2                        | int |  Constant value. Always `2`.  |
-| parent_iid | int            | Identifier of the parent entity. Always zero for ROOT |
-| name                    | const char*                | Entity name                               |
-| alignment               | const char*                | Padding array of `'\0'` to align to a 4-byte boundary.                     |
-| data                         | const char[41 * 4]                    | unknow binary data                                            |
+| Field       | Size              | Description                                                        |
+|-------------|-------------------|--------------------------------------------------------------------|
+| ROOT        | const char[4]     | Root struct indicator. Always `ROOT`.                              |
+| size        | int               | Binary size of struct, stored in Big-Endian format.                |
+| 2           | int               | Constant value. Always `2`.                                        |
+| parent_iid  | int               | Identifier of the parent entity. Always zero for ROOT.             |
+| name        | const char*       | Entity name.                                                       |
+| alignment   | const char*       | Padding array of `'\0'` to align to a 4-byte boundary.             |
+| data        | const char[41*4]  | Unknown binary data.                                               |
 
 ### Struct NMF LOCA
 
-| Fiel                         | Size                           | Description                                                             |
-|------------------------------|---------------------------------|-------------------------------------------------------------------------|
-| LOCA                         | const char[4]                   | Root struct indicator. Always `LOCA`.                                   |
-| size                    | int                        | Binary size of struct, stored in Big-Endian format.                |
-| 0                        | int |  Constant value. Always `0`.  |
-| parent_iid | int            | Identifier of the parent entity. |
-| name                    | const char*                | Entity name                               |
-| alignment               | const char*                | Padding array of `'\0'` to align to a 4-byte boundary.                     |
+| Field       | Size              | Description                                                        |
+|-------------|-------------------|--------------------------------------------------------------------|
+| LOCA        | const char[4]     | Loca struct indicator. Always `LOCA`.                              |
+| size        | int               | Binary size of struct, stored in Big-Endian format.                |
+| 0           | int               | Constant value. Always `0`.                                        |
+| parent_iid  | int               | Identifier of the parent entity.                                   |
+| name        | const char*       | Entity name.                                                       |
+| alignment   | const char*       | Padding array of `'\0'` to align to a 4-byte boundary.             |
+
+### Struct NMF FRAM
+
+| Field                    | Size              | Description                                                                 |
+|--------------------------|-------------------|-----------------------------------------------------------------------------|
+| FRAM                     | const char[4]     | Frame struct indicator. Always `FRAM`.                                      |
+| size                     | int               | Binary size of struct, stored in Big-Endian format.                         |
+| 2                        | int               | Constant value. Always `2`.                                                 |
+| parent_iid               | int               | Identifier of the parent entity.                                            |
+| name                     | const char*       | Entity name.                                                                |
+| alignment                | const char*       | Padding array of `'\0'` to align to a 4-byte boundary.                      |
+| matrix                   | float[16]         | A 4x4 transformation matrix represented as 16 floating point values.        |
+| translation              | float[3]          | Translation vector: offsets along the x, y, and z axes.                     |
+| scaling                  | float[3]          | Scaling factors for the x, y, and z axes.                                   |
+| rotation                 | float[3]          | Rotation values for the x, y, and z axes.                                   |
+| rotate_pivot_translate   | float[3]          | Translation vector for adjusting the rotation pivot point.                  |
+| rotate_pivot             | float[3]          | Coordinates of the rotation pivot point.                                    |
+| scale_pivot_translate    | float[3]          | Translation vector for adjusting the scaling pivot point.                   |
+| scale_pivot              | float[3]          | Coordinates of the scaling pivot point.                                     |
+| shear                    | float[3]          | Shear factors along the x, y, and z axes.                                   |
+| ANIM                     | const char[4]     | Contains `'ANIM'` if an animation is present; otherwise, it is zeroed.      |
+| anim                     | struct anim       | Embedded animation structure; included if `ANIM` equals `'ANIM'`.           |
+
+### Struct NMF JOIN
+
+| Field                    | Size              | Description                                                                 |
+|--------------------------|-------------------|-----------------------------------------------------------------------------|
+| JOIN                     | const char[4]     | Joint struct indicator. Always `JOIN`.                                      |
+| size                     | int               | Binary size of struct, stored in Big-Endian format.                         |
+| 2                        | int               | Constant value. Always `2`.                                                 |
+| parent_iid               | int               | Identifier of the parent entity.                                            |
+| name                     | const char*       | Entity name.                                                                |
+| alignment                | const char*       | Padding array of `'\0'` to align to a 4-byte boundary.                      |
+| matrix                   | float[16]         | A 4x4 transformation matrix represented as 16 floating point values.        |
+| translation              | float[3]          | Translation vector: offsets along the x, y, and z axes.                     |
+| scaling                  | float[3]          | Scaling factors for the x, y, and z axes.                                   |
+| rotation                 | float[3]          | Rotation values for the x, y, and z axes.                                   |
+| rotation_matrix          | float[16]         | A 4x4 rotation matrix represented as 16 floating point values.              |
+| min_rot_limit            | float[3]          |                                                                             |
+| max_rot_limit            | float[3]          |                                                                             |
+| ANIM                     | const char[4]     | Contains `'ANIM'` if an animation is present; otherwise, it is zeroed.      |
+| anim                     | struct anim       | Embedded animation structure; included if `ANIM` equals `'ANIM'`.           |
+
+### Struct NMF ANIM
+
+| Field                         | Size    | Description                                              |
+|-------------------------------|---------|----------------------------------------------------------|
+| unknown                       | boolean | Reserved flag.                                           |
+| translation sizes             | int[3]  | Keyframe counts for translation (x, y, z).               |
+| scaling sizes                 | int[3]  | Keyframe counts for scaling (x, y, z).                   |
+| rotation sizes                | int[3]  | Keyframe counts for rotation (x, y, z).                  |
+| translation curve values x    | float[] | X translation values; length = translation sizes[0].     |
+| translation curve values y    | float[] | Y translation values; length = translation sizes[1].     |
+| translation curve values z    | float[] | Z translation values; length = translation sizes[2].     |
+| translation curve keys x      | int[]   | X translation key indices; count = translation sizes[0]. |
+| translation curve keys y      | int[]   | Y translation key indices; count = translation sizes[1]. |
+| translation curve keys z      | int[]   | Z translation key indices; count = translation sizes[2]. |
+| scaling curve values x        | float[] | X scaling values; length = scaling sizes[0].             |
+| scaling curve values y        | float[] | Y scaling values; length = scaling sizes[1].             |
+| scaling curve values z        | float[] | Z scaling values; length = scaling sizes[2].             |
+| scaling curve keys x          | int[]   | X scaling key indices; count = scaling sizes[0].         |
+| scaling curve keys y          | int[]   | Y scaling key indices; count = scaling sizes[1].         |
+| scaling curve keys z          | int[]   | Z scaling key indices; count = scaling sizes[2].         |
+| rotation curve values x       | float[] | X rotation values; length = rotation sizes[0].           |
+| rotation curve values y       | float[] | Y rotation values; length = rotation sizes[1].           |
+| rotation curve values z       | float[] | Z rotation values; length = rotation sizes[2].           |
+| rotation curve keys x         | int[]   | X rotation key indices; count = rotation sizes[0].       |
+| rotation curve keys y         | int[]   | Y rotation key indices; count = rotation sizes[1].       |
+| rotation curve keys z         | int[]   | Z rotation key indices; count = rotation sizes[2].       |
+
+### Struct NMF MESH
+
+| Field                    | Size                             | Description                                              |
+|--------------------------|----------------------------------|----------------------------------------------------------|
+| MESH                     | const char[4]                    | MESH struct indicator. Always `MESH`.                    |
+| size                     | int                              | Binary size of struct, stored in Big-Endian format.      |
+| 14                       | int                              | Constant value. Always `14`.                             |
+| parent_iid               | int                              | Identifier of the parent entity.                         |
+| name                     | const char*                      | Entity name.                                             |
+| alignment                | const char*                      | Padding array of `'\0'` to align to a 4-byte boundary.   |
+| tnum                     | int                              | Triangle count (assumed).                                |
+| vnum                     | int                              | Vertex count.                                            |
+| vbuf                     | float[vnum*10]                   | Vertex buffer; 10 floats per vertex.                     |
+| uvpt                     | float[vnum*2]                    | UV coordinates; 2 floats per vertex.                     |
+| inum                     | int                              | Index count.                                             |
+| ibuf                     | int16[inum]                      | Index buffer.                                            |
+| zero                     | int16                            | Padding; present if inum is odd.                         |
+| backface_culling         | int                              | Backface culling flag.                                   |
+| complex                  | int                              | Mesh complexity flag.                                    |
+| inside                   | int                              | Inside flag.                                             |
+| smooth                   | int                              | Smooth shading flag.                                     |
+| light_flare              | int                              | Light flare flag.                                        |
+| material_count           | int                              | Number of materials.                                     |
+| materials                | struct maretials[material_count] | Array of material structures.                            |
+| mesh_anim_array          | struct mesh_anim[]               | Mesh animation;                                          |
+| unknown_count_of_floats  | int                              | Unknown float count.                                     |
+| unknown_floats           | float[unknown_count_of_floats]   | Unknown float array.                                     |
+| unknown_count_of_ints    | int                              | Unknown int count.                                       |
+| unknown_ints             | int[unknown_count_of_ints]       | Unknown int array.                                       |
 
 
 
