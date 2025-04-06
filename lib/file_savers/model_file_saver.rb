@@ -3,14 +3,15 @@ require_relative 'binary_file_saver'
 
 class ModelFileSaver
   class << self
-    def save(filepath, models_info)
-      new(filepath, models_info).save
+    def save(filepath, models_info, with_json_models)
+      new(filepath, models_info, with_json_models).save
     end
   end
 
-  def initialize(filepath, models_info)
+  def initialize(filepath, models_info, with_json_models)
     @filepath = filepath
     @models_info = models_info
+    @with_json_models = with_json_models
   end
 
   def save
@@ -25,8 +26,11 @@ class ModelFileSaver
 
   def save_nmf_models
     @models_info.each do |model|
-      # JsonFileSaver.save(model[:system_filepath], model[:nmf])
-      BinaryFileSaver.save(model[:system_filepath], model[:nmf])
+      if @with_json_models
+        JsonFileSaver.save(model[:system_filepath], model[:nmf])
+      else
+        BinaryFileSaver.save(model[:system_filepath], model[:nmf])
+      end
     end
   end
 end

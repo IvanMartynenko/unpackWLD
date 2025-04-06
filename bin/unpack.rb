@@ -20,9 +20,10 @@ require_relative '../lib/file_savers/model_file_saver'
 class WldFile
   attr_reader :texture_pages, :model_folders, :object_folders, :models, :objects, :world_items
 
-  def initialize(filepath)
+  def initialize(filepath, with_json_models)
     @file = FileReader.new(filepath)
-    @folder_manager = SystemFolderManager.new(filepath)
+    @folder_manager = SystemFolderManager.new(filepath, with_json_models)
+    @with_json_models = with_json_models
   end
 
   def parse
@@ -34,7 +35,7 @@ class WldFile
     @texture_pages = Wld::Items::TexturePages.new(@file)
     @model_folders = Wld::Items::Folders.new(@file, 'GROU')
     @object_folders = Wld::Items::Folders.new(@file, 'OBGR')
-    @models = Wld::Items::Models.new(@file)
+    @models = Wld::Items::Models.new(@file, @with_json_models)
     @objects = Wld::Items::Objects.new(@file)
     Wld::Items::Makl.new(@file)
     @world_items = Wld::Items::WorldItems.new(@file)
@@ -56,12 +57,13 @@ def main
     puts 'Usage: Specify the path to the WLD game file as the first parameter.'
     exit 1
   end
+  with_json_models = ARGV[1] == '--with-json-models'
 
   start_time = Time.now
-  folder_manager = SystemFolderManager.new(filepath)
+  folder_manager = SystemFolderManager.new(filepath, with_json_models)
   folder_manager.create_directories
 
-  wld = WldFile.new(filepath)
+  wld = WldFile.new(filepath, with_json_models)
   wld.parse
 
   # parser = WldParser.new(filepath)
@@ -90,7 +92,7 @@ def main
   wld.models.to_hash.each do |model|
     model[:system_filepath] = folder_manager.model_path(model[:name], model[:index], model[:parent_folder_iid])
   end
-  ModelFileSaver.save(folder_manager.files[:models_info], wld.models.to_hash)
+  ModelFileSaver.save(folder_manager.files[:models_info], wld.models.to_hash, with_json_models)
 
   puts "Total times: #{Time.now - start_time}"
 end

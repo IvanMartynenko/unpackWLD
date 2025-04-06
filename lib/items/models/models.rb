@@ -29,8 +29,9 @@ MODEL_FIELDS = {
 module Wld
   module Items
     class Models < Base
-      def initialize(file_or_hash, marker = 'LIST')
+      def initialize(file_or_hash, with_json_models, marker = 'LIST')
         @separator = 'MODL'
+        @with_json_models = with_json_models
         super(file_or_hash, marker)
       end
 
@@ -48,8 +49,11 @@ module Wld
         model_info[:camera] = camera if camera
         model_info[:parent_folder_iid] = parent_folder_iid
         model_info[:attack_points] = attack_points unless attack_points.empty?
-        # model_info[:nmf] = Nmf.new.unpack(file)
-        model_info[:nmf] = RawNmf.new.unpack(file)
+        if @with_json_models
+          model_info[:nmf] = Nmf.new.unpack(file)
+        else
+          model_info[:nmf] = RawNmf.new.unpack(file)
+        end
         model_info[:index] = index + 2
 
         model_info
@@ -64,8 +68,11 @@ module Wld
         accumulator.concat pack_camera(node)
         accumulator.push_int node[:parent_folder_iid]
         accumulator.concat pack_attack_points(node)
-        # accumulator.concat Nmf.new.pack(node[:nmf])
-        accumulator.concat RawNmf.new.pack(node[:nmf])
+        if @with_json_models
+          accumulator.concat Nmf.new.pack(node[:nmf])
+        else
+          accumulator.concat RawNmf.new.pack(node[:nmf])
+        end
 
         accumulator.data
       end

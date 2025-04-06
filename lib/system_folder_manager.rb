@@ -3,7 +3,8 @@ require 'fileutils'
 class SystemFolderManager
   attr_reader :paths, :files
 
-  def initialize(filepath)
+  def initialize(filepath, with_json_models)
+    @with_json_models = with_json_models
     if File.directory?(filepath)
       @unpack_dir = filepath
       @filename = "#{File.split(filepath).last.gsub(/_unpack$/, '')}.wld"
@@ -53,7 +54,8 @@ class SystemFolderManager
   end
 
   def model_path(name, index, parent_folder_id)
-    fullname = "#{name}_#{index}.nmf"
+    ext = @with_json_models ? 'json' : 'nmf'
+    fullname = "#{name}_#{index}.#{ext}"
     File.join(@models_tree[parent_folder_id - 1], fullname)
   end
 

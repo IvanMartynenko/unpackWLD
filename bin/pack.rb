@@ -25,8 +25,10 @@ def main
     puts 'Usage: Specify the path to the unpacked WLD game folder as the first parameter.'
     exit 1
   end
+  with_json_models = ARGV[1] == '--with-json-models'
+
   start_time = Time.now
-  folder_manager = SystemFolderManager.new(filepath)
+  folder_manager = SystemFolderManager.new(filepath, with_json_models)
   file = BinaryDataBuffer.new
 
   file.push_token_with_zero 'WRLD'
@@ -55,10 +57,13 @@ def main
   folder_manager.push_model_directories(model_folders)
   models_info = JSON.parse(File.read(folder_manager.files[:models_info]), symbolize_names: true)
   models_info.each do |node|
-    # node[:nmf] = JSON.parse(File.read(model_filepath(node, folder_manager)), symbolize_names: true)
-    node[:nmf] = File.binread(model_filepath(node, folder_manager))
+    node[:nmf] = if with_json_models
+                   JSON.parse(File.read(model_filepath(node, folder_manager)), symbolize_names: true)
+                 else
+                   File.binread(model_filepath(node, folder_manager))
+                 end
   end
-  file.concat Wld::Items::Models.new(models_info).to_binary
+  file.concat Wld::Items::Models.new(models_info, with_json_models).to_binary
 
   objects = JSON.parse(File.read(folder_manager.files[:object_list]), symbolize_names: true)
   file.concat Wld::Items::Objects.new(objects).to_binary

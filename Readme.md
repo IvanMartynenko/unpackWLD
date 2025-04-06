@@ -425,8 +425,5 @@ This structure describes mesh-specific animation data. It contains arrays of unk
 
 ---
 
-This documentation should now serve as a comprehensive guide to the NMF file format, with clear descriptions and a corrected table layout for each structure.
----
-
 ## License
 This project is licensed under the [MIT License](LICENSE).
