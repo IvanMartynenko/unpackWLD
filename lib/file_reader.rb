@@ -109,6 +109,11 @@ class FileReader
     @offset = offset
   end
 
+
+  def current_size
+    (@file.size - @offset) / 4
+  end
+
   def read(params, exists_item = nil)
     item = exists_item || {}
     params.each do |field|

@@ -25,8 +25,8 @@ class ModelFileSaver
 
   def save_nmf_models
     @models_info.each do |model|
-      JsonFileSaver.save(model[:system_filepath], model[:nmf])
-      # BinaryFileSaver.save(model[:system_filepath], model[:nmf])
+      # JsonFileSaver.save(model[:system_filepath], model[:nmf])
+      BinaryFileSaver.save(model[:system_filepath], model[:nmf])
     end
   end
 end

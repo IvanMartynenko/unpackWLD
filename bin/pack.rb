@@ -55,8 +55,8 @@ def main
   folder_manager.push_model_directories(model_folders)
   models_info = JSON.parse(File.read(folder_manager.files[:models_info]), symbolize_names: true)
   models_info.each do |node|
-    node[:nmf] = JSON.parse(File.read(model_filepath(node, folder_manager)), symbolize_names: true)
-    # node[:nmf] = File.binread(model_filepath(node, folder_manager))
+    # node[:nmf] = JSON.parse(File.read(model_filepath(node, folder_manager)), symbolize_names: true)
+    node[:nmf] = File.binread(model_filepath(node, folder_manager))
   end
   file.concat Wld::Items::Models.new(models_info).to_binary
 
