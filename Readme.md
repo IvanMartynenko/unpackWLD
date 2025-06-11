@@ -361,16 +361,16 @@ The MATERIAL structure holds the properties for a material applied to a mesh.
 | **uv_mapping_flip_horizontal**     | int                 | Flag indicating horizontal flip for UV mapping (typically 0 or 1).                            |
 | **uv_mapping_flip_vertical**       | int                 | Flag indicating vertical flip for UV mapping (typically 0 or 1).                              |
 | **rotate**                         | int                 | Rotation value or flag for texture rotation (exact usage is unclear).                         |
-| **horizontal_stretch**             | int                 | Factor for horizontal stretching of the texture.                                              |
-| **vertical_stretch**               | int                 | Factor for vertical stretching of the texture.                                                |
-| **red**                            | int                 | Red color component for the material.                                                         |
-| **green**                          | int                 | Green color component for the material.                                                       |
-| **blue**                           | int                 | Blue color component for the material.                                                        |
-| **alpha**                          | int                 | Alpha (transparency) value for the material.                                                  |
-| **red2**                           | int                 | Secondary red component (possibly for effects or dual-texturing).                             |
-| **green2**                         | int                 | Secondary green component.                                                                    |
-| **blue2**                          | int                 | Secondary blue component.                                                                     |
-| **alpha2**                         | int                 | Secondary alpha (transparency) value.                                                         |
+| **horizontal_stretch**             | float                 | Factor for horizontal stretching of the texture.                                              |
+| **vertical_stretch**               | float                 | Factor for vertical stretching of the texture.                                                |
+| **red**                            | float                 | Red color component for the material.                                                         |
+| **green**                          | float                 | Green color component for the material.                                                       |
+| **blue**                           | float                 | Blue color component for the material.                                                        |
+| **alpha**                          | float                 | Alpha (transparency) value for the material.                                                  |
+| **red2**                           | float                 | Secondary red component (possibly for effects or dual-texturing).                             |
+| **green2**                         | float                 | Secondary green component.                                                                    |
+| **blue2**                          | float                 | Secondary blue component.                                                                     |
+| **alpha2**                         | float                 | Secondary alpha (transparency) value.                                                         |
 | **unknown_zero_ints**              | int[9]              | Array of 9 unknown integers, often zeroed.                                                    |
 | **TXPG/TEXT/ZERo**                 | const char[4]       | Indicator for texture page or text data; may contain `"TXPG"`, `"TEXT"`, or `"ZERo"`.         |
 

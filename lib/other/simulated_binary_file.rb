@@ -134,7 +134,7 @@ class SimulatedBinaryFile
     size = count * data_size
     return '' if size.zero?
 
-    raise StandartError, 'bed end of file' if @offset + size > @data.size
+    raise StandardError, 'bed end of file' if @offset + size > @data.size
 
     res = @data[@offset..@offset + size - 1]
     @offset += size

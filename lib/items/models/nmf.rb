@@ -48,7 +48,12 @@ module Wld
             item_accumulator.push_int 2
             item_accumulator.push_int value[:parent_iid]
             item_accumulator.push_name value[:name]
-            item_accumulator.push value[:data][:data].pack('H*')
+            item_accumulator.push_floats value[:data][:matrix].flatten
+            keys = %i[translation scaling rotation]
+            keys.each { |key| item_accumulator.push_floats value[:data][key] }
+            item_accumulator.push_ints value[:data][:unknown]
+            item_accumulator.push_int 0
+
           when 'LOCA'
             item_accumulator.push_int 0
             item_accumulator.push_int value[:parent_iid]
@@ -107,8 +112,8 @@ module Wld
                 item_accumulator.push_int mt[:uv_mapping_flip_horizontal]
                 item_accumulator.push_int mt[:uv_mapping_flip_vertical]
                 item_accumulator.push_int mt[:rotate]
-                item_accumulator.push_int mt[:horizontal_stretch]
-                item_accumulator.push_int mt[:vertical_stretch]
+                item_accumulator.push_float mt[:horizontal_stretch]
+                item_accumulator.push_float mt[:vertical_stretch]
                 item_accumulator.push_float mt[:red]
                 item_accumulator.push_float mt[:green]
                 item_accumulator.push_float mt[:blue]
@@ -185,7 +190,14 @@ module Wld
       protected
 
       def parse_root
-        { data: @file.hex(41 * 4) }
+        res = {}
+        keys = %i[translation scaling rotation]
+        res[:matrix] = @file.floats(MATRIX_SIZE).each_slice(4).to_a
+        keys.each { |key| res[key] = @file.floats(3) }
+        @file.word == 'ANIM' ? parse_anim : nil
+        res[:unknown] = @file.ints(15)
+        # res[:anim] = a if a
+        res
       end
 
       def parse_loca
@@ -272,9 +284,13 @@ module Wld
         a = @file.word == 'ANIM' ? parse_anim_mesh : nil
         res[:mesh_anim] = a if a
 
+        # anti-ground
         unknown_count_of_floats = @file.int
         res[:unknown_floats] = @file.floats(unknown_count_of_floats * 3) if unknown_count_of_floats > 0
 
+        # Если кратко, наиболее вероятно, что это либо:
+        # Индексы вершин для треугольных стрипов (Triangle Strips) или фанов (Triangle Fans), которые описывают поверхность модели.
+        # Группы (Submesh), идущие одна за другой, где каждая группа представляет свой набор индексов.
         unknown_count_of_ints = @file.int
         res[:unknown_ints] = @file.ints(unknown_count_of_ints) if unknown_count_of_ints > 0
 
@@ -292,8 +308,8 @@ module Wld
         res[:uv_mapping_flip_horizontal] = @file.int
         res[:uv_mapping_flip_vertical] = @file.int
         res[:rotate] = @file.int
-        res[:horizontal_stretch] = @file.int
-        res[:vertical_stretch] = @file.int
+        res[:horizontal_stretch] = @file.float
+        res[:vertical_stretch] = @file.float
         res[:red] = @file.float
         res[:green] = @file.float
         res[:blue] = @file.float
