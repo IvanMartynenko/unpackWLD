@@ -1,34 +1,8 @@
-require 'yaml'
+require 'json'
 require 'fileutils'
 require_relative '../lib/system_folder_manager'
 
 GLOBAL_EXT = '.tif'
-
-def deep_stringify_keys(hash)
-  if hash.is_a?(Hash)
-    hash.each_with_object({}) do |(key, value), result|
-      new_key = key.is_a?(Symbol) ? key.to_s : key
-      result[new_key] = value.is_a?(Array) ? value.map { |t| deep_stringify_keys(t) } : deep_stringify_keys(value)
-    end
-  elsif hash.is_a?(Array)
-    hash.map { |v| deep_stringify_keys(v) }
-  else
-    hash
-  end
-end
-
-def deep_symbolize_keys(hash)
-  if hash.is_a?(Hash)
-    hash.each_with_object({}) do |(key, value), result|
-      new_key = key.is_a?(Symbol) ? key : key.to_sym
-      result[new_key] = value.is_a?(Array) ? value.map { |t| deep_symbolize_keys(t) } : deep_symbolize_keys(value)
-    end
-  elsif hash.is_a?(Array)
-    hash.map { |v| deep_symbolize_keys(v) }
-  else
-    hash
-  end
-end
 
 def normalize_filepath_without_ext(path)
   ext = File.extname(path)
@@ -48,11 +22,11 @@ end
 filepath = ARGV[0]
 exit 0 if filepath.nil?
 
-folder_manager = SystemFolderManager.new(filepath)
-model_list_tree = deep_symbolize_keys(YAML.load_file(folder_manager.files[:model_list_tree]))
+folder_manager = SystemFolderManager.new(filepath, true)
+model_list_tree = JSON.parse(File.read(folder_manager.files[:model_list_tree]), symbolize_names: true)
 folder_manager.push_model_directories(model_list_tree)
-# Load YAML file
-data = deep_symbolize_keys YAML.load_file(folder_manager.files[:texture_pages])
+# Load JSON file
+data = JSON.parse(File.read(folder_manager.files[:texture_pages]), symbolize_names: true)
 data = data.sort_by { |t| t[:index] }
 
 images = []
@@ -125,10 +99,10 @@ end
 #   end
 # end
 
-models_info = deep_symbolize_keys YAML.load_file(folder_manager.files[:models_info])
+models_info = JSON.parse(File.read(folder_manager.files[:models_info]), symbolize_names: true)
 models_info.each do |info|
-  model_file = deep_symbolize_keys YAML.load_file(folder_manager.model_path(info[:name], info[:index],
-                                                                            info[:parent_folder]))
+  model_file =JSON.parse(File.read(folder_manager.model_path(info[:name], info[:index],
+                                                                            info[:parent_folder])), symbolize_names: true)
   model_file.each do |word|
     next if word[:word] != 'MESH'
 
@@ -147,13 +121,13 @@ models_info.each do |info|
   file = File.open(folder_manager.model_path(info[:name], info[:index],
                                              info[:parent_folder]), 'w')
   if file
-    file.write(deep_stringify_keys(model_file).to_yaml)
+    file.write(JSON.pretty_generate(model_file))
     file.close
   end
 end
 
 file = File.open(folder_manager.files[:texture_pages], 'w')
 if file
-  file.write(deep_stringify_keys(data).to_yaml)
+  file.write(JSON.pretty_generate(data))
   file.close
 end
