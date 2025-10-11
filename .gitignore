@@ -2,6 +2,7 @@ output/
 VaBank.wld
 ModVaBank.wld
 VaBank_unpack/
+3d_files/
 ModVaBank_unpack/
 *.c
 *.dat

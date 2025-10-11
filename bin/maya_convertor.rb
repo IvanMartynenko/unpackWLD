@@ -475,7 +475,7 @@ def convert_mesh_to_maya_ascii(mesh_data, node_name, parent_node_name = 'meshTra
   fmt_f = ->(f) { ('%.6f' % f).sub(/\.?0+$/, '') }
 
   # вершины "x y z"
-  vrts = vbuf.map { |row| x, y, z = row[0, 3]; "#{fmt_f[x]} #{fmt_f[y]} #{fmt_f[z]}" }
+  vrts = vbuf.map { |row| x, y, z = row[0, 3]; "#{fmt_f[x]} #{fmt_f[z]} #{fmt_f[y]}" }
 
   # для .edge требуется "i j 0" (жёсткость = 0)
   edges_for_attr = edges_oriented.map { |i, j| "#{i} #{j} 0" }
@@ -558,6 +558,7 @@ def convert_mesh_to_maya_ascii(mesh_data, node_name, parent_node_name = 'meshTra
     str << "\n\tsetAttr -size 0 \".face\" -type \"polyFaces\";"
   end
 
+  return str
   # ===== Материалы / шейдинг =====
   # Для каждого материала создаём: lambert, shadingEngine, (опционально) file + place2dTexture.
   # Затем коннектим og[k] -> SG.dagSetMembers.
@@ -578,8 +579,8 @@ def convert_mesh_to_maya_ascii(mesh_data, node_name, parent_node_name = 'meshTra
 
     # shadingEngine
     str << "\ncreateNode shadingEngine -name \"#{sg_name}\";"
-    str << "\n\tsetAttr \".ihi\" 0;"
-    str << "\n\tsetAttr \".ro\" yes;"
+    str << "\n\tsetAttr \".isHistoricallyInteresting\" 0;"
+    str << "\n\tsetAttr \".renderableOnly\" yes;"
     str << "\nconnectAttr \"#{mat_name}.outColor\" \"#{sg_name}.surfaceShader\";"
 
     # Текстура (по желанию)
@@ -605,7 +606,7 @@ def convert_mesh_to_maya_ascii(mesh_data, node_name, parent_node_name = 'meshTra
     # assign: og[k] -> SG.dagSetMembers (если групп нет — пропустим, позже свяжем весь меш)
     if material_groups.any?
       og_index = idx + 1 # мы положили материалы начиная с og[1]
-      str << "\nconnectAttr -na \"#{node_name}.instObjGroups[0].objectGroups[#{og_index}]\" \"#{sg_name}.dagSetMembers\";"
+      str << "\nconnectAttr -nextAvailable \"#{node_name}.instObjGroups[0].objectGroups[#{og_index}]\" \"#{sg_name}.dagSetMembers\";"
     end
   end
 
@@ -614,7 +615,7 @@ def convert_mesh_to_maya_ascii(mesh_data, node_name, parent_node_name = 'meshTra
     base_name = (mtrls.first[:name] || "mat0").gsub(/\s+/, '_')
     sg_name   = "#{base_name}SG"
     # создавали objectGroups[1] как "все фейсы"
-    str << "\nconnectAttr -na \"#{node_name}.instObjGroups[0].objectGroups[1]\" \"#{sg_name}.dagSetMembers\";"
+    str << "\nconnectAttr -nextAvailable \"#{node_name}.instObjGroups[0].objectGroups[1]\" \"#{sg_name}.dagSetMembers\";"
   end
 
   str
@@ -694,7 +695,7 @@ end
 def convert_mesh_to_maya_ascii22(mesh_data, node_name = 'meshShape', parent_node_name = 'meshTransform')
   line = parent_node_name ? "createNode mesh -name \"#{node_name}\" -parent \"#{parent_node_name}\";" : "createNode transform -name \"#{node_name}\";"
 
-  vrts = mesh_data[:vbuf].map { |t| [t[0], t[1], t[2]] }
+  vrts = mesh_data[:vbuf].map { |t| [t[0], t[2], t[2]] }
   # uvpt = mesh_data[:vbuf].map { |t| [t[6], t[7]] }
   uvpt = (mesh_data[:uvpt] || []).map { |u, v| [u, v] }
   edge = generate_edges_from_ibuf(mesh_data[:ibuf])
@@ -742,7 +743,7 @@ def model_to_maya(items)
     when 'FRAM'
       str += "\n" + convert_join_to_maya_ascii(unpacked_item, item_name, parent_name, as_joint: false)
     when 'MESH'
-      str += "\n" + convert_mesh_to_maya_ascii(unpacked_item, item_name, parent_name)
+      str += "\n" + convert_mesh_to_maya_ascii22(unpacked_item, item_name, parent_name)
     end
   end
   str
