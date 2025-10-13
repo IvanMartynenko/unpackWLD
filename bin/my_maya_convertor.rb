@@ -78,12 +78,31 @@ class MayaMeshObject < MayaBaseObject
   def initialize(mesh_data, node_name = 'meshShape', parent_node_name = 'meshTransform')
     @node_name = node_name
     @parent_node_name = parent_node_name
+
+    # Вершины (xyz)
     @vrts = mesh_data[:vbuf].map { |t| [t[0], t[1], t[2]] }
-    # uvpt = mesh_data[:vbuf].map { |t| [t[6], t[7]] }
-    # uvpt = (mesh_data[:uvpt] || []).map { |u, v| [u, v] }
-    @edge = generate_edges_from_ibuf(mesh_data[:ibuf])
-    @face = generate_faces_from_edges_an_ibuf(@edge, mesh_data[:ibuf])
+
+    # Исходные треугольники (по вершинам) — пригодятся для mf
+    @ibuf = mesh_data[:ibuf].map { |tri| tri.dup } # [v1,v2,v3]
+
+    # Сгенерим рёбра и индексы рёбер для polyFaces::f
+    @edge = generate_edges_from_ibuf(@ibuf)
+    @face = generate_faces_from_edges_an_ibuf(@edge, @ibuf)
     @edge.map! { |e| e.push(0) }
+
+    # ---------- UV: строим пул uvpt и соответствие вершина->uv-индекс ----------
+    # Приоритет: mesh_data[:uvpt] если длина == числу вершин; иначе берём из vbuf[6,7]; иначе 0,0
+    uv_source_per_vertex =
+      if mesh_data[:uvpt].is_a?(Array) && mesh_data[:uvpt].length == @vrts.length
+        mesh_data[:uvpt].map { |u| [u[0].to_f, u[1].to_f] }
+      else
+        mesh_data[:vbuf].map { |t| [(t[6] || 0.0).to_f, (t[7] || 0.0).to_f] }
+      end
+
+    # В этой сборке лоадер отлично работает, когда uvpt идёт "по-вершинно":
+    # uv-индекс == индекс вершины. Это же сильно упрощает mf.
+    @uvpt = uv_source_per_vertex
+    @uv_index_of_vertex = (0...@vrts.length).to_a
   end
 
   def to_s
@@ -94,45 +113,64 @@ class MayaMeshObject < MayaBaseObject
     str += "\n\tsetAttr -size 2 \".instObjGroups[0].objectGroups\";"
     str += "\n\tsetAttr \".instObjGroups[0].objectGroups[0].objectGrpCompList\" -type \"componentList\" 0;"
     str += "\n\tsetAttr \".instObjGroups[0].objectGroups[1].objectGrpCompList\" -type \"componentList\" 1 \"f[0:#{@face.size - 1}]\";"
+
+    # Вершины
     str += "\n\tsetAttr -size #{@vrts.size} \".vrts[0:#{@vrts.size - 1}]\"  \n\t\t#{@vrts.map { |x, y, z| "#{x} #{y} #{z}" }.join("\n\t\t")};"
+
+    # Рёбра
     str += "\n\tsetAttr -size #{@edge.size} \".edge[0:#{@edge.size - 1}]\"  \n\t\t#{@edge.map { |x, y, z| "#{x} #{y} #{z}" }.join("\n\t\t")};"
-    # str += "\n\tsetAttr -size #{uvpt.size} \".uvpt[0:#{uvpt.size - 1}]\"  #{uvpt.join(' ')};"
-    face_string = @face.map { |f| "\t\tf 3 #{f.join(' ')} " }.join(" \n")
-    str += "\n\tsetAttr -size #{@face.size} \".face[0:#{@face.size - 1}]\" -type \"polyFaces\"\n#{face_string};"
+
+    # UV-пул (.uvpt) — важно: -type "float2"
+    str += "\n\tsetAttr -size #{@uvpt.size} \".uvpt[0:#{@uvpt.size - 1}]\" -type \"float2\"\n\t\t" \
+           "#{@uvpt.map { |u, v| "#{u} #{v}" }.each_slice(6).map { |chunk| chunk.join('   ') }.join("\n\t\t")};"
+
+    # polyFaces: f ... и mf <ровно N индексов>
+    face_lines = []
+    @face.each_with_index do |edges_triplet, i|
+      # "f 3 e1 e2 e3"
+      f_part = "f 3 #{edges_triplet.join(' ')}"
+
+      # Для mf нам нужны uv-индексы уголков. Берём вершины из исходного ibuf[i] (порядок per-corner)
+      tri = @ibuf[i]
+      uv_idx = tri.map { |v| @uv_index_of_vertex[v] } # тут просто [v1, v2, v3]
+
+      # "mf u1 u2 u3" (без uv-сета и без count — как у тебя)
+      mf_part = "mf #{uv_idx.join(' ')}"
+
+      face_lines << "\t\t#{f_part}   #{mf_part}"
+    end
+
+    str += "\n\tsetAttr -size #{@face.size} \".face[0:#{@face.size - 1}]\" -type \"polyFaces\"\n#{face_lines.join(" \n")};"
     str
   end
 
+  # --------- твои утилиты без изменений ---------
+
   def generate_edges_from_ibuf(ibuf)
-    # puts "#{ibuf}"
-    edges = []  # Use a set to avoid duplicates
+    edges = []
     ibuf.each do |buf2|
-      buf = buf2
+      buf = buf2.dup
+      # для соответствия твоему лоадеру — свап 2-го и 3-го
       tmp = buf[1]
       buf[1] = buf[2]
       buf[2] = tmp
-      # puts "buf #{buf}"
-      # if find_edges_index(edges.to_a, )
+
       buf.each_cons(2) do |a, b|
-        edges.push([a,b]) if find_edges_index(edges,[a,b]).nil?
-      end  # Add edges between consecutive vertices
-      edges.push([buf.last, buf.first]) if find_edges_index(edges,[buf.last, buf.first]).nil? # Add the edge between the first and last vertex
+        edges.push([a, b]) if find_edges_index(edges, [a, b]).nil?
+      end
+      edges.push([buf.last, buf.first]) if find_edges_index(edges, [buf.last, buf.first]).nil?
     end
-    edges # Convert to an array
+    edges
   end
 
   def generate_faces_from_edges_an_ibuf(edges, ibuf)
     result = []
     ibuf.each do |buf|
-      v1 = buf[0]
-      v2 = buf[1]
-      v3 = buf[2]
+      v1, v2, v3 = buf
       i1 = find_edges_index(edges, [v1, v2])
       i2 = find_edges_index(edges, [v2, v3])
       i3 = find_edges_index(edges, [v3, v1])
-      # puts "#{i1} #{i2} #{i3} #{[v1, v2]} | #{[v2, v3]} | #{[v3, v1]} ||| #{edges}"
-      # next if i1.nil? || i2.nil? || i3.nil?
-
-      result.push([i1, i2, i3])
+      result << [i1, i2, i3]
     end
     result
   end
@@ -150,23 +188,13 @@ class MayaMeshObject < MayaBaseObject
     reverse_value = value.reverse
     edges.each_with_index do |edge, index|
       if edge == reverse_value
-        # v2 = index
-        # break
-        return -(index+1)
+        return -(index + 1)
       end
-      # return index - edges.size
     end
 
     return nil if v1.nil? && v2.nil?
-    return v2 if v1.nil?
-    return v1 if v2.nil?
-
-    if v2 <= v1
-      # return v2 - edges.size
-      return -(v2 + 1)
-    end
-
-    return v1
+    return v1 unless v1.nil?
+    v2
   end
 end
 
