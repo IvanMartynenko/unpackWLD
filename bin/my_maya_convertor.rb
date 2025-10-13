@@ -2,6 +2,12 @@
 # frozen_string_literal: true
 
 require 'json'
+FPS = 24.0
+DEG2RAD = Math::PI / 180.0
+
+def fmt_f(x)
+  ('%.9f' % x.to_f).sub(/\.?0+$/, '') # компактно без лишних нулей
+end
 
 class NmfJsonToMaya
   def initialize(nodes)
@@ -40,12 +46,15 @@ class MayaFrameObject < MayaBaseObject
     @parent_node_name = parent_node_name
     @translation = fram_data[:translation] || [0,0,0]
     @scaling     = fram_data[:scaling]     || [1,1,1]
-    @rotation    = fram_data[:rotation]    || [0,0,0] # radians
+    @rotation    = fram_data[:rotation]    || [0,0,0] # radians в базовом значении
+
     @rpv_t       = fram_data[:rotate_pivot_translate] || [0,0,0]
     @rpv         = fram_data[:rotate_pivot]           || [0,0,0]
     @spv_t       = fram_data[:scale_pivot_translate]  || [0,0,0]
     @spv         = fram_data[:scale_pivot]            || [0,0,0]
     @shear       = fram_data[:shear]                  || [0,0,0]
+
+    @anim        = fram_data[:anim] || {}
 
     rad2deg = ->(a){ a * 180.0 / Math::PI }
     @rot_deg = @rotation.map { |r| rad2deg.call(r) }
@@ -53,13 +62,11 @@ class MayaFrameObject < MayaBaseObject
 
   def to_s
     str  = +"\n"
-    line = @parent_node_name ?
+    header = @parent_node_name ?
       "createNode transform -name \"#{@node_name}\" -parent \"#{@parent_node_name}\";" :
       "createNode transform -name \"#{@node_name}\";"
-    str << line
-    # Важно: не пишем .matrix — только компоненты
-    # matrix_flat = fram_data[:matrix].flatten.map(&:to_s).join(' ')
-    # str += "\n\tsetAttr \".matrix\" -type \"matrix\" #{matrix_flat};"
+    str << header
+    # базовые TRS (статические значения узла)
     str << "\n\tsetAttr \".translate\" -type \"double3\" #{@translation.join(' ')};"
     str << "\n\tsetAttr \".rotate\" -type \"double3\" #{@rot_deg.join(' ')};"
     str << "\n\tsetAttr \".scale\" -type \"double3\" #{@scaling.join(' ')};"
@@ -68,11 +75,86 @@ class MayaFrameObject < MayaBaseObject
     str << "\n\tsetAttr \".scalePivotTranslate\" -type \"double3\" #{@spv_t.join(' ')};"
     str << "\n\tsetAttr \".scalePivot\" -type \"double3\" #{@spv.join(' ')};"
     str << "\n\tsetAttr \".shear\" -type \"double3\" #{@shear.join(' ')};"
-    str << "\n\tsetAttr \".rotateOrder\" 0;"
+    # str << "\n\tsetAttr \".rotateOrder\" 0;"
+
+    # анимация (если есть)
+    str << emit_trs_animation
 
     str
   end
+
+  private
+
+  # -------- Анимация TRS из @anim --------
+  def emit_trs_animation
+    return '' if @anim.nil? || @anim.empty?
+
+    out = +''
+    # ожидаем структуру как в твоём примере:
+    # @anim[:translation][:values][:x] = [v0, v1,...]
+    # @anim[:translation][:keys][:x]   = [t0, t1,...]  (секунды)
+    {
+      translation: {curve: 'animCurveTL', attrs: %w[translateX translateY translateZ], axes: %i[x y z]},
+      rotation:    {curve: 'animCurveTA', attrs: %w[rotateX rotateY rotateZ],         axes: %i[x y z]},
+      scaling:     {curve: 'animCurveTU', attrs: %w[scaleX scaleY scaleZ],            axes: %i[x y z]}
+    }.each do |track, spec|
+      next unless @anim[track]
+      values = @anim[track][:values] || {}
+      keys   = @anim[track][:keys]   || {}
+
+      spec[:axes].each_with_index do |ax, i|
+        vlist = (values[ax] || values[ax.to_s] || [])
+        tlist = (keys[ax]   || keys[ax.to_s]   || [])
+        next if vlist.nil? || tlist.nil? || vlist.empty? || tlist.empty?
+
+        # перевод секунд -> кадры
+        frames = tlist.map { |t| (t.to_f * FPS) }
+        if track === :rotation
+          puts "#{ax} #{vlist}"
+          vlist.map! { |v| v / DEG2RAD }
+          puts "#{vlist}"
+        end
+
+        curve_name = "#{@node_name}_#{spec[:attrs][i]}"
+        out << build_anim_curve(spec[:curve], curve_name, frames, vlist)
+        out << connect_curve(curve_name, "#{@node_name}.#{spec[:attrs][i]}")
+      end
+    end
+
+    # необязательно, но если будет явный visibility
+    if @anim[:visibility].is_a?(Hash)
+      vis_vals = @anim[:visibility][:values] || []
+      vis_keys = @anim[:visibility][:keys]   || []
+      if !vis_vals.empty? && !vis_keys.empty?
+        frames = vis_keys.map { |t| (t.to_f * FPS).round }
+        cname  = "#{@node_name}_visibility"
+        out << build_anim_curve('animCurveTU', cname, frames, vis_vals)
+        out << connect_curve(cname, "#{@node_name}.visibility")
+      end
+    end
+
+    out
+  end
+
+  def build_anim_curve(curve_type, curve_name, frames, values)
+    n = [frames.length, values.length].min
+    return '' if n == 0
+
+    pairs = (0...n).map { |i| "#{fmt_f(frames[i])} #{fmt_f(values[i])}" }.join(' ')
+    s  = +"\ncreateNode #{curve_type} -name \"#{curve_name}\";"
+    s << "\n\tsetAttr \".tangentType\" 9;"
+    s << "\n\tsetAttr \".weightedTangents\" no;"
+    s << "\n\tsetAttr -size #{n} \".keyTimeValue[0:#{n-1}]\" #{pairs};"
+    # при желании можно задать выходные типы тангенсов:
+    # s << "\n\tsetAttr -size #{n} \".keyTanOutType[0:#{n-1}]\" #{Array.new(n, 5).join(' ')};"
+    s
+  end
+
+  def connect_curve(curve_name, dst_attr)
+    "\nconnectAttr \"#{curve_name}.output\" \"#{dst_attr}\";"
+  end
 end
+
 
 class MayaMeshObject < MayaBaseObject
   def initialize(mesh_data, node_name = 'meshShape', parent_node_name = 'meshTransform')

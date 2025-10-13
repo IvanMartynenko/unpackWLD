@@ -236,23 +236,21 @@ module Wld
         keys.each { |key| res[key] = {} }
         keys.each { |key| sizes[key] = {} }
         keys.each { |key| sizes[key][:sizes] = @file.ints(3) }
-        keys.each { |key| res[key].merge!(parse_curve(sizes[key][:sizes])) }
+        keys.each { |key| res[key].merge!(parse_curve(sizes[key][:sizes], key)) }
         res
       end
 
-      def parse_curve(sizes)
+      def parse_curve(sizes, key)
         res = { values: {}, keys: {} }
         coordinates = %i[x y z]
+
         coordinates.each_with_index do |coord, idx|
-          res[:keys][coord] = @file.floats(sizes[idx]) if sizes[idx] > 0
-        end
-        coordinates.each_with_index do |coord, idx|
-          res[:values][coord] = @file.floats(sizes[idx]) if sizes[idx] > 0
+          n = sizes[idx]
+          next if n <= 0
+          res[:keys][coord]   = @file.floats(n)  # сначала ключи этой оси
+          res[:values][coord] = @file.floats(n)  # сразу следом значения этой оси
         end
 
-        tmp = res[:keys][:y].dup
-        res[:keys][:y] = res[:values][:y]
-        res[:values][:y] = tmp
         res
       end
 
