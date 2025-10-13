@@ -1,0 +1,258 @@
+//Maya ASCII 2.5 scene
+requires maya "2.5";
+currentUnit -linear centimeter -angle degree -time film;createNode transform -name "group5";
+	setAttr ".translate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scale" -type "double3" 1.0 1.0 1.0;
+	setAttr ".rotatePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotatePivot" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scalePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scalePivot" -type "double3" 0.0 0.0 0.0;
+	setAttr ".shear" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotateOrder" 0;
+createNode transform -name "pCylinder11" -parent "group5";
+	setAttr ".translate" -type "double3" 0.0 1.6091797351837158 0.045210305601358414;
+	setAttr ".rotate" -type "double3" 90.00000250447816 0.0 45.00000125223908;
+	setAttr ".scale" -type "double3" 0.028193382546305656 0.04538154602050781 0.028193382546305656;
+	setAttr ".rotatePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotatePivot" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scalePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scalePivot" -type "double3" 0.0 0.0 0.0;
+	setAttr ".shear" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotateOrder" 0;
+createNode mesh -name "pCylinderShape11" -parent "pCylinder11";
+	setAttr -keyable off ".visibility";
+	setAttr -size 2 ".instObjGroups[0].objectGroups";
+	setAttr ".instObjGroups[0].objectGroups[0].objectGrpCompList" -type "componentList" 0;
+	setAttr ".instObjGroups[0].objectGroups[1].objectGrpCompList" -type "componentList" 1 "f[0:7]";
+	setAttr -size 10 ".vrts[0:9]"  		9.56862550083315e-07 0.05291368067264557 -1.0000008344650269	-0.999998927116394 0.05291368067264557 -1.1904438679266605e-06	1.0970113635266898e-06 0.05291368067264557 0.9999988675117493	1.0000009536743164 0.05291368067264557 -8.634301025267632e-07	9.56862550083315e-07 0.9999999403953552 -1.0000008344650269	-0.999998927116394 0.9999999403953552 -1.1904438679266605e-06	1.0970113635266898e-06 0.9999999403953552 0.9999988675117493	1.0000009536743164 0.9999999403953552 -8.634301025267632e-07	9.56862550083315e-07 0.05291368067264557 -1.0000008344650269	9.56862550083315e-07 0.9999999403953552 -1.0000008344650269;
+	setAttr -size 17 ".edge[0:16]"  		0 1 0	1 5 0	5 0 0	5 4 0	4 0 0	1 2 0	2 6 0	6 1 0	6 5 0	2 3 0	3 7 0	7 2 0	7 6 0	3 8 0	8 9 0	9 3 0	9 7 0;
+	setAttr -size 10 ".uvpt[0:9]" -type "float2"		0.0 0.0   0.25 0.0   0.5 0.0   0.75 0.0   0.0 1.0   0.25 1.0	0.5 1.0   0.75 1.0   1.0 0.0   1.0 1.0;
+	setAttr -size 8 ".face[0:7]" -type "polyFaces"
+		f 3 -3 -2 -1   mf 0 5 1 
+		f 3 -5 -4 2   mf 0 4 5 
+		f 3 -8 -7 -6   mf 1 6 2 
+		f 3 1 -9 7   mf 1 5 6 
+		f 3 -12 -11 -10   mf 2 7 3 
+		f 3 6 -13 11   mf 2 6 7 
+		f 3 -16 -15 -14   mf 3 9 8 
+		f 3 10 -17 15   mf 3 7 9;
+createNode transform -name "pPlane73" -parent "group5";
+	setAttr ".translate" -type "double3" 0.0002832985483109951 1.6084834337234497 0.08992590755224228;
+	setAttr ".rotate" -type "double3" 90.00000250447816 0.0 0.0;
+	setAttr ".scale" -type "double3" 0.04017636924982071 0.04017636924982071 0.04017636924982071;
+	setAttr ".rotatePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotatePivot" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scalePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scalePivot" -type "double3" 0.0 0.0 0.0;
+	setAttr ".shear" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotateOrder" 0;
+createNode mesh -name "pPlaneShape73" -parent "pPlane73";
+	setAttr -keyable off ".visibility";
+	setAttr -size 2 ".instObjGroups[0].objectGroups";
+	setAttr ".instObjGroups[0].objectGroups[0].objectGrpCompList" -type "componentList" 0;
+	setAttr ".instObjGroups[0].objectGroups[1].objectGrpCompList" -type "componentList" 1 "f[0:1]";
+	setAttr -size 4 ".vrts[0:3]"  		-0.5 7.927834388965493e-08 0.49999889731407166	0.5 7.927834388965493e-08 0.49999889731407166	-0.5 7.927834388965493e-08 -0.49999865889549255	0.5 7.927834388965493e-08 -0.49999865889549255;
+	setAttr -size 5 ".edge[0:4]"  		0 1 0	1 3 0	3 0 0	3 2 0	2 0 0;
+	setAttr -size 4 ".uvpt[0:3]" -type "float2"		0.0 0.0   1.0 0.0   0.0 1.0   1.0 1.0;
+	setAttr -size 2 ".face[0:1]" -type "polyFaces"
+		f 3 -3 -2 -1   mf 0 3 1 
+		f 3 -5 -4 2   mf 0 2 3;
+createNode transform -name "pSphere2";
+	setAttr ".translate" -type "double3" 0.0 1.5918691158294678 0.06902875006198883;
+	setAttr ".rotate" -type "double3" 0.0 -88.00159843635916 0.0;
+	setAttr ".scale" -type "double3" 0.037482406944036484 0.037482406944036484 0.037482406944036484;
+	setAttr ".rotatePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotatePivot" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scalePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scalePivot" -type "double3" 0.0 0.0 0.0;
+	setAttr ".shear" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotateOrder" 0;
+createNode mesh -name "pSphereShape2" -parent "pSphere2";
+	setAttr -keyable off ".visibility";
+	setAttr -size 2 ".instObjGroups[0].objectGroups";
+	setAttr ".instObjGroups[0].objectGroups[0].objectGrpCompList" -type "componentList" 0;
+	setAttr ".instObjGroups[0].objectGroups[1].objectGrpCompList" -type "componentList" 1 "f[0:17]";
+	setAttr -size 15 ".vrts[0:14]"  		0.14694640040397644 -0.4045080840587616 -0.2545185089111328	-0.1469462811946869 -0.4045080840587616 -0.2545185089111328	-0.29389265179634094 -0.4045080840587616 -6.606573954570649e-09	-0.14694634079933167 -0.4045080840587616 0.25451838970184326	0.14694629609584808 -0.4045080840587616 0.25451838970184326	0.29389262199401855 -0.4045080840587616 -6.606573954570649e-09	0.23776428401470184 -0.1545090526342392 -0.4118195176124573	-0.23776409029960632 -0.1545090526342392 -0.41181960701942444	-0.4755283296108246 -0.1545090526342392 -6.606573954570649e-09	-0.2377641797065735 -0.1545090526342392 0.4118195176124573	0.23776410520076752 -0.1545090526342392 0.4118195176124573	0.4755282700061798 -0.1545090526342392 -6.606573954570649e-09	0.0 -0.4999997913837433 -6.606573954570649e-09	0.14694640040397644 -0.4045080840587616 -0.2545185089111328	0.23776428401470184 -0.1545090526342392 -0.4118195176124573;
+	setAttr -size 32 ".edge[0:31]"  		0 1 0	1 7 0	7 0 0	7 6 0	6 0 0	1 2 0	2 8 0	8 1 0	8 7 0	2 3 0	3 9 0	9 2 0	9 8 0	3 4 0	4 10 0	10 3 0	10 9 0	4 5 0	5 11 0	11 4 0	11 10 0	5 13 0	13 14 0	14 5 0	14 11 0	0 12 0	12 1 0	12 2 0	12 3 0	12 4 0	12 5 0	12 13 0;
+	setAttr -size 15 ".uvpt[0:14]" -type "float2"		0.0 0.20000000298023224   0.1666666716337204 0.20000000298023224   0.3333333432674408 0.20000000298023224   0.5 0.20000000298023224   0.6666666865348816 0.20000000298023224   0.8333333730697632 0.20000000298023224	0.0 0.4000000059604645   0.1666666716337204 0.4000000059604645   0.3333333432674408 0.4000000059604645   0.5 0.4000000059604645   0.6666666865348816 0.4000000059604645   0.8333333730697632 0.4000000059604645	0.5 0.0   1.0 0.20000000298023224   1.0 0.4000000059604645;
+	setAttr -size 18 ".face[0:17]" -type "polyFaces"
+		f 3 -3 -2 -1   mf 0 7 1 
+		f 3 -5 -4 2   mf 0 6 7 
+		f 3 -8 -7 -6   mf 1 8 2 
+		f 3 1 -9 7   mf 1 7 8 
+		f 3 -12 -11 -10   mf 2 9 3 
+		f 3 6 -13 11   mf 2 8 9 
+		f 3 -16 -15 -14   mf 3 10 4 
+		f 3 10 -17 15   mf 3 9 10 
+		f 3 -20 -19 -18   mf 4 11 5 
+		f 3 14 -21 19   mf 4 10 11 
+		f 3 -24 -23 -22   mf 5 14 13 
+		f 3 18 -25 23   mf 5 11 14 
+		f 3 -27 -26 0   mf 1 12 0 
+		f 3 -28 26 5   mf 2 12 1 
+		f 3 -29 27 9   mf 3 12 2 
+		f 3 -30 28 13   mf 4 12 3 
+		f 3 -31 29 17   mf 5 12 4 
+		f 3 -32 30 21   mf 13 12 5;
+createNode transform -name "pPlane76";
+	setAttr ".translate" -type "double3" 0.0222848542034626 1.5888819694519043 0.06281322240829468;
+	setAttr ".rotate" -type "double3" -91.76603670684418 47.22906422372401 -2.1879975263172824;
+	setAttr ".scale" -type "double3" 0.01416133251041174 0.08752070367336273 0.03060745820403099;
+	setAttr ".rotatePivotTranslate" -type "double3" -0.0004547522112261504 0.02877041883766651 -0.029818857088685036;
+	setAttr ".rotatePivot" -type "double3" 0.0004547522112261504 0.0010711352806538343 0.015342152677476406;
+	setAttr ".scalePivotTranslate" -type "double3" -0.038604360073804855 -0.011167515069246292 -0.4859131872653961;
+	setAttr ".scalePivot" -type "double3" 0.0390591099858284 0.01223865058273077 0.5012553334236145;
+	setAttr ".shear" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotateOrder" 0;
+createNode mesh -name "pPlaneShape76" -parent "pPlane76";
+	setAttr -keyable off ".visibility";
+	setAttr -size 2 ".instObjGroups[0].objectGroups";
+	setAttr ".instObjGroups[0].objectGroups[0].objectGrpCompList" -type "componentList" 0;
+	setAttr ".instObjGroups[0].objectGroups[1].objectGrpCompList" -type "componentList" 1 "f[0:1]";
+	setAttr -size 4 ".vrts[0:3]"  		-0.25 -1.1102230246251565e-16 0.5	0.25 -1.1102230246251565e-16 0.5	-0.25 1.1102230246251565e-16 -0.5	0.25 1.1102230246251565e-16 -0.5;
+	setAttr -size 5 ".edge[0:4]"  		0 3 0	3 1 0	1 0 0	0 2 0	2 3 0;
+	setAttr -size 4 ".uvpt[0:3]" -type "float2"		0.0 0.0   1.0 0.0   0.0 1.0   1.0 1.0;
+	setAttr -size 2 ".face[0:1]" -type "polyFaces"
+		f 3 -3 -2 -1   mf 0 1 3 
+		f 3 0 -5 -4   mf 0 3 2;
+createNode transform -name "group6";
+	setAttr ".translate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotate" -type "double3" 4.087721369185476 0.0 0.0;
+	setAttr ".scale" -type "double3" 1.0 1.0 1.0;
+	setAttr ".rotatePivotTranslate" -type "double3" 0.0 0.0008401858503930271 -2.9983910280861892e-05;
+	setAttr ".rotatePivot" -type "double3" 0.020826192572712898 1.5857492685317993 0.04994233697652817;
+	setAttr ".scalePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scalePivot" -type "double3" 0.020826192572712898 1.5857492685317993 0.04994233697652817;
+	setAttr ".shear" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotateOrder" 0;
+createNode transform -name "pPlane74" -parent "group6";
+	setAttr ".translate" -type "double3" 0.020590124651789665 1.5888819694519043 0.06281322240829468;
+	setAttr ".rotate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scale" -type "double3" 0.011642666533589363 0.08752070367336273 0.03060745820403099;
+	setAttr ".rotatePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotatePivot" -type "double3" -4.85722573273506e-17 1.1102230246251565e-15 -0.01447670441120863;
+	setAttr ".scalePivotTranslate" -type "double3" 4.123346222838567e-15 -1.1575038108178285e-14 0.4585029184818268;
+	setAttr ".scalePivot" -type "double3" -4.1719184801659176e-15 1.2685261132803442e-14 -0.4729796350002289;
+	setAttr ".shear" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotateOrder" 0;
+createNode mesh -name "pPlaneShape74" -parent "pPlane74";
+	setAttr -keyable off ".visibility";
+	setAttr -size 2 ".instObjGroups[0].objectGroups";
+	setAttr ".instObjGroups[0].objectGroups[0].objectGrpCompList" -type "componentList" 0;
+	setAttr ".instObjGroups[0].objectGroups[1].objectGrpCompList" -type "componentList" 1 "f[0:1]";
+	setAttr -size 4 ".vrts[0:3]"  		-0.25 -1.1102230246251565e-16 0.5	0.25 -1.1102230246251565e-16 0.5	-0.25 1.1102230246251565e-16 -0.5	0.25 1.1102230246251565e-16 -0.5;
+	setAttr -size 5 ".edge[0:4]"  		0 3 0	3 1 0	1 0 0	0 2 0	2 3 0;
+	setAttr -size 4 ".uvpt[0:3]" -type "float2"		0.0 0.0   1.0 0.0   0.0 1.0   1.0 1.0;
+	setAttr -size 2 ".face[0:1]" -type "polyFaces"
+		f 3 -3 -2 -1   mf 0 1 3 
+		f 3 0 -5 -4   mf 0 3 2;
+createNode transform -name "pPlane75" -parent "group6";
+	setAttr ".translate" -type "double3" 0.020590124651789665 1.5888819694519043 0.06281322240829468;
+	setAttr ".rotate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scale" -type "double3" 0.011642666533589363 0.08752070367336273 0.03060745820403099;
+	setAttr ".rotatePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotatePivot" -type "double3" -4.85722573273506e-17 1.1102230246251565e-15 -0.01447670441120863;
+	setAttr ".scalePivotTranslate" -type "double3" 4.123346222838567e-15 -1.1575038108178285e-14 0.4585029184818268;
+	setAttr ".scalePivot" -type "double3" -4.1719184801659176e-15 1.2685261132803442e-14 -0.4729796350002289;
+	setAttr ".shear" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotateOrder" 0;
+createNode mesh -name "pPlaneShape75" -parent "pPlane75";
+	setAttr -keyable off ".visibility";
+	setAttr -size 2 ".instObjGroups[0].objectGroups";
+	setAttr ".instObjGroups[0].objectGroups[0].objectGrpCompList" -type "componentList" 0;
+	setAttr ".instObjGroups[0].objectGroups[1].objectGrpCompList" -type "componentList" 1 "f[0:1]";
+	setAttr -size 4 ".vrts[0:3]"  		-0.25 -1.1102230246251565e-16 0.5	0.25 -1.1102230246251565e-16 0.5	-0.25 1.1102230246251565e-16 -0.5	0.25 1.1102230246251565e-16 -0.5;
+	setAttr -size 5 ".edge[0:4]"  		0 1 0	1 3 0	3 0 0	3 2 0	2 0 0;
+	setAttr -size 4 ".uvpt[0:3]" -type "float2"		0.0 0.0   1.0 0.0   0.0 1.0   1.0 1.0;
+	setAttr -size 2 ".face[0:1]" -type "polyFaces"
+		f 3 -3 -2 -1   mf 0 3 1 
+		f 3 -5 -4 2   mf 0 2 3;
+createNode transform -name "group7";
+	setAttr ".translate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scale" -type "double3" 1.0 1.0 1.0;
+	setAttr ".rotatePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotatePivot" -type "double3" -0.000710811058524996 1.6099138259887695 0.09192327409982681;
+	setAttr ".scalePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scalePivot" -type "double3" -0.000710811058524996 1.6099138259887695 0.09192327409982681;
+	setAttr ".shear" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotateOrder" 0;
+createNode transform -name "pCylinder15" -parent "group7";
+	setAttr ".translate" -type "double3" 0.0 1.5782496929168701 0.10654112696647644;
+	setAttr ".rotate" -type "double3" -10.050867542936592 0.0 0.0;
+	setAttr ".scale" -type "double3" 0.006285910960286856 0.023383785039186478 0.006285910960286856;
+	setAttr ".rotatePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotatePivot" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scalePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scalePivot" -type "double3" 0.0 0.0 0.0;
+	setAttr ".shear" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotateOrder" 0;
+createNode mesh -name "pCylinderShape15" -parent "pCylinder15";
+	setAttr -keyable off ".visibility";
+	setAttr -size 2 ".instObjGroups[0].objectGroups";
+	setAttr ".instObjGroups[0].objectGroups[0].objectGrpCompList" -type "componentList" 0;
+	setAttr ".instObjGroups[0].objectGroups[1].objectGrpCompList" -type "componentList" 1 "f[0:9]";
+	setAttr -size 12 ".vrts[0:11]"  		0.9101094603538513 -0.7191811800003052 -3.1103904247283936	-3.355282783508301 -0.7191811800003052 -1.7244807481765747	-3.355283260345459 -0.7191811800003052 2.760417938232422	0.9101089239120483 -0.7191811800003052 4.146327972412109	3.5462660789489746 -0.7191811800003052 0.5179687142372131	0.2714477777481079 1.0 -0.7837203145027161	-0.6498708128929138 1.0 -0.484365850687027	-0.6498708128929138 1.0 0.4843657910823822	0.27144765853881836 1.0 0.7837203145027161	0.840853750705719 1.0 0.0	0.9101094603538513 -0.7191811800003052 -3.1103904247283936	0.2714477777481079 1.0 -0.7837203145027161;
+	setAttr -size 21 ".edge[0:20]"  		0 6 0	6 1 0	1 0 0	0 5 0	5 6 0	1 7 0	7 2 0	2 1 0	6 7 0	2 8 0	8 3 0	3 2 0	7 8 0	3 9 0	9 4 0	4 3 0	8 9 0	4 11 0	11 10 0	10 4 0	9 11 0;
+	setAttr -size 12 ".uvpt[0:11]" -type "float2"		0.0 0.0   0.20000000298023224 0.0   0.4000000059604645 0.0   0.6000000238418579 0.0   0.800000011920929 0.0   0.0 1.0	0.20000000298023224 1.0   0.4000000059604645 1.0   0.6000000238418579 1.0   0.800000011920929 1.0   1.0 0.0   1.0 1.0;
+	setAttr -size 10 ".face[0:9]" -type "polyFaces"
+		f 3 -3 -2 -1   mf 0 1 6 
+		f 3 0 -5 -4   mf 0 6 5 
+		f 3 -8 -7 -6   mf 1 2 7 
+		f 3 5 -9 1   mf 1 7 6 
+		f 3 -12 -11 -10   mf 2 3 8 
+		f 3 9 -13 6   mf 2 8 7 
+		f 3 -16 -15 -14   mf 3 4 9 
+		f 3 13 -17 10   mf 3 9 8 
+		f 3 -20 -19 -18   mf 4 10 11 
+		f 3 17 -21 14   mf 4 11 9;
+createNode transform -name "pSphere1" -parent "group7";
+	setAttr ".translate" -type "double3" -0.00047382686170749366 1.609676718711853 0.08990353345870972;
+	setAttr ".rotate" -type "double3" 89.80581339618554 0.0 0.0;
+	setAttr ".scale" -type "double3" 0.01541534997522831 0.03158603981137276 0.01541534997522831;
+	setAttr ".rotatePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotatePivot" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scalePivotTranslate" -type "double3" 0.0 0.0 0.0;
+	setAttr ".scalePivot" -type "double3" 0.0 0.0 0.0;
+	setAttr ".shear" -type "double3" 0.0 0.0 0.0;
+	setAttr ".rotateOrder" 0;
+createNode mesh -name "pSphereShape1" -parent "pSphere1";
+	setAttr -keyable off ".visibility";
+	setAttr -size 2 ".instObjGroups[0].objectGroups";
+	setAttr ".instObjGroups[0].objectGroups[0].objectGrpCompList" -type "componentList" 0;
+	setAttr ".instObjGroups[0].objectGroups[1].objectGrpCompList" -type "componentList" 1 "f[0:29]";
+	setAttr -size 22 ".vrts[0:21]"  		0.5000002980232239 -8.046054489341259e-08 -0.8660236597061157	-0.49999991059303284 -8.046054489341259e-08 -0.8660236597061157	-1.0000001192092896 1.4007873971877416e-08 1.8774219370243372e-06	-0.5000001192092896 1.0847629283716742e-07 0.8660274147987366	0.4999999701976776 1.0847629283716742e-07 0.8660274147987366	1.0 1.4007873971877416e-08 1.8774219370243372e-06	0.433012992143631 0.5 -0.7500025629997253	-0.43301263451576233 0.5 -0.7500025629997253	-0.8660255670547485 0.5 1.7926838609128026e-06	-0.43301281332969666 0.5 0.7499983906745911	0.4330126941204071 0.5 0.7499983906745911	0.866025447845459 0.5 1.7926838609128026e-06	0.25000014901161194 0.8660253882408142 -0.4330134391784668	-0.24999992549419403 0.8660253882408142 -0.4330134391784668	-0.5000000596046448 0.8660252690315247 -6.61161720927339e-07	-0.2500000596046448 0.866025447845459 0.43301209807395935	0.2499999850988388 0.866025447845459 0.43301209807395935	0.4999999701976776 0.8660252690315247 -6.61161720927339e-07	1.1940116950714952e-10 0.905448853969574 -0.0006548782112076879	0.5000002980232239 -8.046054489341259e-08 -0.8660236597061157	0.433012992143631 0.5 -0.7500025629997253	0.25000014901161194 0.8660253882408142 -0.4330134391784668;
+	setAttr -size 51 ".edge[0:50]"  		0 1 0	1 7 0	7 0 0	7 6 0	6 0 0	1 2 0	2 8 0	8 1 0	8 7 0	2 3 0	3 9 0	9 2 0	9 8 0	3 4 0	4 10 0	10 3 0	10 9 0	4 5 0	5 11 0	11 4 0	11 10 0	5 19 0	19 20 0	20 5 0	20 11 0	7 13 0	13 6 0	13 12 0	12 6 0	8 14 0	14 7 0	14 13 0	9 15 0	15 8 0	15 14 0	10 16 0	16 9 0	16 15 0	11 17 0	17 10 0	17 16 0	20 21 0	21 11 0	21 17 0	13 18 0	18 12 0	14 18 0	15 18 0	16 18 0	17 18 0	21 18 0;
+	setAttr -size 22 ".uvpt[0:21]" -type "float2"		0.0 0.5   0.1666666716337204 0.5   0.3333333432674408 0.5   0.5 0.5   0.6666666865348816 0.5   0.8333333730697632 0.5	0.0 0.6666666865348816   0.1666666716337204 0.6666666865348816   0.3333333432674408 0.6666666865348816   0.5 0.6666666865348816   0.6666666865348816 0.6666666865348816   0.8333333730697632 0.6666666865348816	0.0 0.8333333730697632   0.1666666716337204 0.8333333730697632   0.3333333432674408 0.8333333730697632   0.5 0.8333333730697632   0.6666666865348816 0.8333333730697632   0.8333333730697632 0.8333333730697632	0.5 1.0   1.0 0.5   1.0 0.6666666865348816   1.0 0.8333333730697632;
+	setAttr -size 30 ".face[0:29]" -type "polyFaces"
+		f 3 -3 -2 -1   mf 0 7 1 
+		f 3 -5 -4 2   mf 0 6 7 
+		f 3 -8 -7 -6   mf 1 8 2 
+		f 3 1 -9 7   mf 1 7 8 
+		f 3 -12 -11 -10   mf 2 9 3 
+		f 3 6 -13 11   mf 2 8 9 
+		f 3 -16 -15 -14   mf 3 10 4 
+		f 3 10 -17 15   mf 3 9 10 
+		f 3 -20 -19 -18   mf 4 11 5 
+		f 3 14 -21 19   mf 4 10 11 
+		f 3 -24 -23 -22   mf 5 20 19 
+		f 3 18 -25 23   mf 5 11 20 
+		f 3 -27 -26 3   mf 6 13 7 
+		f 3 -29 -28 26   mf 6 12 13 
+		f 3 -31 -30 8   mf 7 14 8 
+		f 3 25 -32 30   mf 7 13 14 
+		f 3 -34 -33 12   mf 8 15 9 
+		f 3 29 -35 33   mf 8 14 15 
+		f 3 -37 -36 16   mf 9 16 10 
+		f 3 32 -38 36   mf 9 15 16 
+		f 3 -40 -39 20   mf 10 17 11 
+		f 3 35 -41 39   mf 10 16 17 
+		f 3 -43 -42 24   mf 11 21 20 
+		f 3 38 -44 42   mf 11 17 21 
+		f 3 -46 -45 27   mf 12 18 13 
+		f 3 44 -47 31   mf 13 18 14 
+		f 3 46 -48 34   mf 14 18 15 
+		f 3 47 -49 37   mf 15 18 16 
+		f 3 48 -50 40   mf 16 18 17 
+		f 3 49 -51 43   mf 17 18 21;

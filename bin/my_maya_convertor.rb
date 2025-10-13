@@ -52,7 +52,7 @@ class MayaFrameObject < MayaBaseObject
   end
 
   def to_s
-    str  = +""
+    str  = +"\n"
     line = @parent_node_name ?
       "createNode transform -name \"#{@node_name}\" -parent \"#{@parent_node_name}\";" :
       "createNode transform -name \"#{@node_name}\";"
@@ -83,12 +83,13 @@ class MayaMeshObject < MayaBaseObject
     @vrts = mesh_data[:vbuf].map { |t| [t[0], t[1], t[2]] }
 
     # Исходные треугольники (по вершинам) — пригодятся для mf
-    @ibuf = mesh_data[:ibuf].map { |tri| tri.dup } # [v1,v2,v3]
+    @ibuf = mesh_data[:ibuf].map { |tri| [tri[0], tri[2], tri[1]] } # [v1,v2,v3]
 
     # Сгенерим рёбра и индексы рёбер для polyFaces::f
-    @edge = generate_edges_from_ibuf(@ibuf)
-    @face = generate_faces_from_edges_an_ibuf(@edge, @ibuf)
-    @edge.map! { |e| e.push(0) }
+    # @edge = generate_edges_from_ibuf(@ibuf)
+    # @face = generate_faces_from_edges_an_ibuf(@edge, @ibuf)
+    @edge, @face = build_edges_and_faces_signed(@ibuf)
+     @edge.map! { |e| e.length == 2 ? e + [0] : e }
 
     # ---------- UV: строим пул uvpt и соответствие вершина->uv-индекс ----------
     # Приоритет: mesh_data[:uvpt] если длина == числу вершин; иначе берём из vbuf[6,7]; иначе 0,0
@@ -105,6 +106,69 @@ class MayaMeshObject < MayaBaseObject
     @uv_index_of_vertex = (0...@vrts.length).to_a
   end
 
+  # Построение неориентированных рёбер + ПОДПИСАННЫЕ индексы рёбер для f
+def build_edges_and_faces_signed(tris)
+  edge_map = {}   # "va|vb" -> edge_index
+  edges    = []   # [[va,vb], ...] с va < vb
+
+  # 1) Собираем уникальные рёбра
+  tris.each do |(a, b, c)|
+    [[a, b], [b, c], [c, a]].each do |u, v|
+      va, vb = [u, v].minmax
+      key = "#{va}|#{vb}"
+      unless edge_map.key?(key)
+        edge_map[key] = edges.length
+        edges << [va, vb]
+      end
+    end
+  end
+
+  # 2) Для каждого треугольника считаем ПОДПИСАННЫЕ индексы рёбер (для f)
+  faces_signed = tris.map do |(a, b, c)|
+    e0 = signed_edge_index(edge_map, a, b) # (a→b)
+    e1 = signed_edge_index(edge_map, b, c) # (b→c)
+    e2 = signed_edge_index(edge_map, c, a) # (c→a)
+    [e0, e1, e2]
+  end
+
+  [edges, faces_signed]
+end
+
+# Возвращает индекс ребра с направлением:
+#   совпало с хранением (va<vb и (a,b)==(va,vb))  -> idx
+#   обратное направление                          -> -(idx+1)
+def signed_edge_index(edge_map, a, b)
+  va, vb = [a, b].minmax
+  idx = edge_map["#{va}|#{vb}"]
+  raise "edge not found for #{a}-#{b}" unless idx
+  same_dir = (a == va) && (b == vb)
+  same_dir ? idx : -(idx + 1)
+end
+
+  def build_edges_and_faces(tris)
+    edge_map = {}      # "va|vb" -> edge_index
+    edges = []         # [[va,vb,0], ...]
+    faces = []         # [[e0,e1,e2], ...]
+
+    tris.each do |(a, b, c)|
+      tri_edges = [[a, b], [b, c], [c, a]].map do |u, v|
+        va, vb = [u, v].minmax
+        key = "#{va}|#{vb}"
+        idx = edge_map[key]
+        unless idx
+          idx = edges.length
+          edge_map[key] = idx
+          edges << [va, vb, 0]  # 3-й элемент — как у вас, флаг/сглаживание/и пр.
+        end
+        idx
+      end
+      faces << tri_edges
+    end
+
+    faces.map! { |t| [t[0], t[1], t[2]] }
+    [edges, faces]
+  end
+
   def to_s
     line = @parent_node_name ? "createNode mesh -name \"#{@node_name}\" -parent \"#{@parent_node_name}\";" : "createNode transform -name \"#{@node_name}\";"
     str = ''
@@ -115,14 +179,14 @@ class MayaMeshObject < MayaBaseObject
     str += "\n\tsetAttr \".instObjGroups[0].objectGroups[1].objectGrpCompList\" -type \"componentList\" 1 \"f[0:#{@face.size - 1}]\";"
 
     # Вершины
-    str += "\n\tsetAttr -size #{@vrts.size} \".vrts[0:#{@vrts.size - 1}]\"  \n\t\t#{@vrts.map { |x, y, z| "#{x} #{y} #{z}" }.join("\n\t\t")};"
+    str += "\n\tsetAttr -size #{@vrts.size} \".vrts[0:#{@vrts.size - 1}]\"  \t\t#{@vrts.map { |x, y, z| "#{x} #{y} #{z}" }.join("\t")};"
 
     # Рёбра
-    str += "\n\tsetAttr -size #{@edge.size} \".edge[0:#{@edge.size - 1}]\"  \n\t\t#{@edge.map { |x, y, z| "#{x} #{y} #{z}" }.join("\n\t\t")};"
+    str += "\n\tsetAttr -size #{@edge.size} \".edge[0:#{@edge.size - 1}]\"  \t\t#{@edge.map { |x, y, z| "#{x} #{y} #{z}" }.join("\t")};"
 
     # UV-пул (.uvpt) — важно: -type "float2"
-    str += "\n\tsetAttr -size #{@uvpt.size} \".uvpt[0:#{@uvpt.size - 1}]\" -type \"float2\"\n\t\t" \
-           "#{@uvpt.map { |u, v| "#{u} #{v}" }.each_slice(6).map { |chunk| chunk.join('   ') }.join("\n\t\t")};"
+    str += "\n\tsetAttr -size #{@uvpt.size} \".uvpt[0:#{@uvpt.size - 1}]\" -type \"float2\"\t\t" \
+           "#{@uvpt.map { |u, v| "#{u} #{v}" }.each_slice(6).map { |chunk| chunk.join('   ') }.join("\t")};"
 
     # polyFaces: f ... и mf <ровно N индексов>
     face_lines = []
@@ -135,9 +199,10 @@ class MayaMeshObject < MayaBaseObject
       uv_idx = tri.map { |v| @uv_index_of_vertex[v] } # тут просто [v1, v2, v3]
 
       # "mf u1 u2 u3" (без uv-сета и без count — как у тебя)
-      mf_part = "mf #{uv_idx.join(' ')}"
+      mf_part = "mf 3 #{uv_idx.join(' ')}"
 
       face_lines << "\t\t#{f_part}   #{mf_part}"
+      # face_lines << "\t\t#{f_part}  "
     end
 
     str += "\n\tsetAttr -size #{@face.size} \".face[0:#{@face.size - 1}]\" -type \"polyFaces\"\n#{face_lines.join(" \n")};"
@@ -148,31 +213,13 @@ class MayaMeshObject < MayaBaseObject
 
   def generate_edges_from_ibuf(ibuf)
     edges = []
-    ibuf.each do |buf2|
-      buf = buf2.dup
-      # для соответствия твоему лоадеру — свап 2-го и 3-го
-      tmp = buf[1]
-      buf[1] = buf[2]
-      buf[2] = tmp
-
+    ibuf.each do |buf|
       buf.each_cons(2) do |a, b|
         edges.push([a, b]) if find_edges_index(edges, [a, b]).nil?
       end
       edges.push([buf.last, buf.first]) if find_edges_index(edges, [buf.last, buf.first]).nil?
     end
     edges
-  end
-
-  def generate_faces_from_edges_an_ibuf(edges, ibuf)
-    result = []
-    ibuf.each do |buf|
-      v1, v2, v3 = buf
-      i1 = find_edges_index(edges, [v1, v2])
-      i2 = find_edges_index(edges, [v2, v3])
-      i3 = find_edges_index(edges, [v3, v1])
-      result << [i1, i2, i3]
-    end
-    result
   end
 
   def find_edges_index(edges, value)
@@ -196,6 +243,20 @@ class MayaMeshObject < MayaBaseObject
     return v1 unless v1.nil?
     v2
   end
+
+  def generate_faces_from_edges_an_ibuf(edges, ibuf)
+    result = []
+    ibuf.each do |buf|
+      v1, v2, v3 = buf
+      i1 = find_edges_index(edges, [v1, v2])
+      i2 = find_edges_index(edges, [v2, v3])
+      i3 = find_edges_index(edges, [v3, v1])
+      result << [i1, i2, i3]
+    end
+    result
+  end
+
+
 end
 
 def model_to_maya(items)

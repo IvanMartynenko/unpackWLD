@@ -2,10 +2,10 @@
 # frozen_string_literal: true
 require 'json'
 
-STRIP_TEX_PATHS = true     # обрезать директории у путей
-FORCE_PNG_EXT   = false     # .tif -> .png в TextureFilename
-FLIP_V          = true     # инвертировать V
-USE_UV_FROM_VBUF = true    # брать uv из хвоста vbuf (как у тебя)
+STRIP_TEX_PATHS  = true
+FORCE_PNG_EXT    = false
+FLIP_V           = true
+USE_UV_FROM_VBUF = true
 
 DEFAULT_POWER    = 10.0
 DEFAULT_SPECULAR = [0.2, 0.2, 0.2]
@@ -25,6 +25,11 @@ end
 # --- Animation export --------------------------------------------------------
 
 TICKS_PER_SECOND = 4800
+
+# Нормализация времени: по умолчанию 0..24 кадров @ 24 fps => 1.0 сек.
+ANIM_FPS          = 24.0
+CLIP_START_FRAME  = 0.0
+CLIP_END_FRAME    = 24.0
 
 def mat_identity
   [[1,0,0,0],
@@ -64,7 +69,6 @@ def mat_from_euler_xyz(rx, ry, rz)
   cy, sy = Math.cos(ry), Math.sin(ry)
   cz, sz = Math.cos(rz), Math.sin(rz)
 
-  # R = Rz * Ry * Rx (XYZ intrinsic == Z*Y*X extrinsic)
   rz_m = [[cz,  sz, 0,0],
           [-sz, cz, 0,0],
           [0,   0,  1,0],
@@ -82,25 +86,54 @@ def mat_from_euler_xyz(rx, ry, rz)
 end
 
 def flatten_row_major_16(m)
-  # .x AnimationKey matrix expects 16 floats row-major
   m.flatten
 end
 
-def find_time_array(values_hash)
-  # Возвращает массив времени t[], если находит монотонно возрастающий [0..] массив
-  candidates = values_hash.values.select { |arr| arr.is_a?(Array) && arr.length > 1 }
-  mono = candidates.select do |arr|
-    increasing = true
-    prev = -Float::INFINITY
-    arr.each { |v| (increasing &&= v.to_f >= prev + 1e-12); prev = v.to_f }
-    increasing
-  end
-  # Выбираем самый длинный монотонный
-  (mono.max_by { |arr| arr.length } || [])
+# Линейная интерполяция по нормализованному времени [0..1]
+def lerp(a, b, t)
+  a + (b - a) * t
 end
 
-def collect_anim_nodes(items)
-  items.select { |it| it.dig('data','anim') }
+def sample_channel(keys_norm, values, t_norm)
+  return nil if keys_norm.nil? || values.nil? || keys_norm.empty? || values.empty?
+  # граничные случаи
+  return values.first.to_f if t_norm <= keys_norm.first.to_f + 1e-8
+  return values.last.to_f  if t_norm >= keys_norm.last.to_f  - 1e-8
+
+  # двоичный поиск сегмента
+  lo = 0
+  hi = keys_norm.length - 1
+  while hi - lo > 1
+    mid = (lo + hi) / 2
+    if t_norm < keys_norm[mid].to_f
+      hi = mid
+    else
+      lo = mid
+    end
+  end
+  t0 = keys_norm[lo].to_f
+  t1 = keys_norm[hi].to_f
+  v0 = values[lo].to_f
+  v1 = values[hi].to_f
+  alpha = (t_norm - t0) / (t1 - t0 + 1e-12)
+  lerp(v0, v1, alpha)
+end
+
+# Собираем уникальный отсортированный список ВСЕХ ключей (нормализованных)
+def gather_all_key_times(anim)
+  times = []
+
+  %w[translation rotation scaling].each do |grp|
+    h = anim[grp] || {}
+    k = (h['keys'] || {})
+    %w[x y z].each do |axis|
+      arr = k[axis]
+      times.concat(arr) if arr.is_a?(Array)
+    end
+  end
+
+  times = times.map(&:to_f).uniq.sort
+  times
 end
 
 def to_ticks(seconds)
@@ -111,6 +144,7 @@ def write_animation_for_node(io, node)
   anim = node.dig('data','anim')
   return false unless anim && anim.is_a?(Hash)
 
+  # Базовые TRS (если канал пуст или нет анимации)
   base_t = node.dig('data','translation') || [0.0,0.0,0.0]
   base_s = node.dig('data','scaling')     || [1.0,1.0,1.0]
   base_r = node.dig('data','rotation')    || [0.0,0.0,0.0]
@@ -119,33 +153,28 @@ def write_animation_for_node(io, node)
   sc   = anim['scaling']     || {'values'=>{},'keys'=>{}}
   rot  = anim['rotation']    || {'values'=>{},'keys'=>{}}
 
-  t_times  = find_time_array(tr['values'] || {})
-  s_times  = find_time_array(sc['values'] || {})
-  r_times  = find_time_array(rot['values']|| {})
+  # Если когда-то добавите метаданные клипа — используйте их тут:
+  # meta = anim['meta'] || {}
+  # fps  = (meta['fps'] || ANIM_FPS).to_f
+  # f0   = (meta['startFrame'] || CLIP_START_FRAME).to_f
+  # f1   = (meta['endFrame']   || CLIP_END_FRAME).to_f
+  fps = ANIM_FPS
+  f0  = CLIP_START_FRAME
+  f1  = CLIP_END_FRAME
 
-  # Набор всех времён (в секундах)
-  times = [t_times, s_times, r_times].max_by(&:length)
-  times = t_times if times.nil? || times.empty?
-  times = s_times if (times.nil? || times.empty?) && !s_times.empty?
-  times = r_times if (times.nil? || times.empty?) && !r_times.empty?
-  return false if times.nil? || times.empty?
+  duration_sec = (f1 - f0) / fps
 
-  # Подготовим массивы значений (заполняем базовыми, если канал пуст)
-  tv = {
-    'x' => tr.dig('values','x') && (tr['values']['x'].length == (tr['values']['z']||[]).length) ? nil : nil, # не используем как значения
-    'y' => tr.dig('values','y'),
-    'z' => tr.dig('values','z')
-  }
-  sv = {
-    'x' => sc.dig('values','x'),
-    'y' => sc.dig('values','y'),
-    'z' => sc.dig('values','z')
-  }
-  rv = {
-    'x' => rot.dig('values','x'),
-    'y' => rot.dig('values','y'),
-    'z' => rot.dig('values','z')
-  }
+  # Список всех нормализованных ключей [0..1]
+  times_norm = gather_all_key_times(anim)
+  return false if times_norm.nil? || times_norm.empty?
+
+  # Подготовим ссылки на ключи/значения по каналам
+  t_keys = tr['keys']   || {}
+  t_vals = tr['values'] || {}
+  r_keys = rot['keys']  || {}
+  r_vals = rot['values']|| {}
+  s_keys = sc['keys']   || {}
+  s_vals = sc['values'] || {}
 
   frame_name = node['name'].to_s.strip
   frame_name = 'Root' if frame_name.empty?
@@ -155,30 +184,34 @@ def write_animation_for_node(io, node)
   io.puts "    AnimationKey {"
   io.puts "      4;"  # 4 == matrix keys
 
-  io.puts "      #{times.length};"
+  io.puts "      #{times_norm.length};"
 
-  times.each_with_index do |tsec, i|
-    tx = tv['x'] && tv['x'][i] || base_t[0].to_f
-    ty = tv['y'] && tv['y'][i] || base_t[1].to_f
-    tz = tv['z'] && tv['z'][i] || base_t[2].to_f
+  times_norm.each_with_index do |t_norm, i|
+    # значения по каналам с интерполяцией
+    tx = sample_channel(t_keys['x'], t_vals['x'], t_norm) || base_t[0].to_f
+    ty = sample_channel(t_keys['y'], t_vals['y'], t_norm) || base_t[1].to_f
+    tz = sample_channel(t_keys['z'], t_vals['z'], t_norm) || base_t[2].to_f
 
-    sx = sv['x'] && sv['x'][i] || base_s[0].to_f
-    sy = sv['y'] && sv['y'][i] || base_s[1].to_f
-    sz = sv['z'] && sv['z'][i] || base_s[2].to_f
+    sx = sample_channel(s_keys['x'], s_vals['x'], t_norm) || base_s[0].to_f
+    sy = sample_channel(s_keys['y'], s_vals['y'], t_norm) || base_s[1].to_f
+    sz = sample_channel(s_keys['z'], s_vals['z'], t_norm) || base_s[2].to_f
 
-    rx = rv['x'] && rv['x'][i] || base_r[0].to_f
-    ry = rv['y'] && rv['y'][i] || base_r[1].to_f
-    rz = rv['z'] && rv['z'][i] || base_r[2].to_f
+    rx = sample_channel(r_keys['x'], r_vals['x'], t_norm) || base_r[0].to_f
+    ry = sample_channel(r_keys['y'], r_vals['y'], t_norm) || base_r[1].to_f
+    rz = sample_channel(r_keys['z'], r_vals['z'], t_norm) || base_r[2].to_f
 
+    # Построение матрицы TRS
     m = mat_identity
     m = mat_mul(m, mat_scale(sx, sy, sz))
     m = mat_mul(m, mat_from_euler_xyz(rx, ry, rz))
     m = mat_mul(m, mat_translation(tx, ty, tz))
 
     flat = flatten_row_major_16(m).map { |v| fmt_f(v) }
-    tick = to_ticks(tsec)
 
-    io.puts "      #{tick};16;" + flat.join(', ') + ";;#{i + 1 === times.size ? ';' : ','}"
+    t_sec  = t_norm.to_f * duration_sec
+    tick   = to_ticks(t_sec)
+
+    io.puts "      #{tick};16;" + flat.join(', ') + ";;#{i + 1 == times_norm.size ? ';' : ','}"
   end
 
   io.puts "    }"
@@ -273,7 +306,7 @@ def write_mesh(io, mesh)
     io.puts "      3; #{t[0]},#{t[1]},#{t[2]}#{i==tris.length-1 ? ';;' : ';,'}"
   end
 
-  # --- Material list (раньше всего, чтобы капризные лоадеры подхватили) ---
+  # --- Material list ---
   io.puts "      MeshMaterialList {"
   io.puts "        #{mats.length};"
   io.puts "        #{tris.length};"
@@ -305,7 +338,7 @@ def write_mesh(io, mesh)
     io.puts "      }"
   end
 
-  # --- Vertex colors (чтобы уж точно был цвет, даже без текстур) ---
+  # --- Vertex colors ---
   m0 = mats.first
   cr,cg,cb,ca = (m0['red']||1), (m0['green']||1), (m0['blue']||1), (m0['alpha']||1)
   io.puts "      MeshVertexColors {"

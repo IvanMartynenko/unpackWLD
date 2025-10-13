@@ -232,7 +232,7 @@ module Wld
         res = {}
         sizes = {}
         res[:unknown] = @file.int
-        keys = %i[translation scaling rotation]
+        keys = %i[translation rotation scaling]
         keys.each { |key| res[key] = {} }
         keys.each { |key| sizes[key] = {} }
         keys.each { |key| sizes[key][:sizes] = @file.ints(3) }
@@ -244,11 +244,15 @@ module Wld
         res = { values: {}, keys: {} }
         coordinates = %i[x y z]
         coordinates.each_with_index do |coord, idx|
-          res[:values][coord] = @file.floats(sizes[idx]) if sizes[idx] > 0
+          res[:keys][coord] = @file.floats(sizes[idx]) if sizes[idx] > 0
         end
         coordinates.each_with_index do |coord, idx|
-          res[:keys][coord] = @file.ints(sizes[idx]) if sizes[idx] > 0
+          res[:values][coord] = @file.floats(sizes[idx]) if sizes[idx] > 0
         end
+
+        tmp = res[:keys][:y].dup
+        res[:keys][:y] = res[:values][:y]
+        res[:values][:y] = tmp
         res
       end
 
@@ -355,7 +359,7 @@ module Wld
             accumulator.push_floats item[key][:values][coord] if item[key][:values][coord]
           end
           %i[x y z].each do |coord|
-            accumulator.push_ints item[key][:keys][coord] if item[key][:keys][coord]
+            accumulator.push_floats item[key][:keys][coord] if item[key][:keys][coord]
           end
         end
 
