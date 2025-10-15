@@ -61,6 +61,39 @@ class MayaFrameObject < MayaBaseObject
 
     rad2deg = ->(a) { a * 180.0 / Math::PI }
     @rot_deg = @rotation.map { |r| rad2deg.call(r) }
+
+    # puts "#{@node_name} #{signed_scale_from_matrix4(fram_data[:matrix])}"
+  end
+
+  def signed_scale_from_matrix4(m, eps: 1e-10)
+    # m — массив 4x4 (Array<Array<Float>>), строки матрицы
+    # puts "#{m}"
+    r0 = m[0][0, 3]
+    r1 = m[1][0, 3]
+    r2 = m[2][0, 3]
+
+    norm = ->(v) { Math.sqrt((v[0] * v[0]) + (v[1] * v[1]) + (v[2] * v[2])) }
+
+    sx = norm.call(r0)
+    sy = norm.call(r1)
+    sz = norm.call(r2)
+
+    # Избегаем деления на ноль
+    nx = sx.abs < eps ? 1.0 : sx
+    ny = sy.abs < eps ? 1.0 : sy
+    nz = sz.abs < eps ? 1.0 : sz
+
+    # Нормализуем 3x3, получаем «ротацию» (возможна с отражением)
+    r = [
+      [r0[0] / nx, r0[1] / nx, r0[2] / nx],
+      [r1[0] / ny, r1[1] / ny, r1[2] / ny],
+      [r2[0] / nz, r2[1] / nz, r2[2] / nz]
+    ]
+
+    # det 3x3
+    (r[0][0] * ((r[1][1] * r[2][2]) - (r[1][2] * r[2][1]))) \
+        - (r[0][1] * ((r[1][0] * r[2][2]) - (r[1][2] * r[2][0]))) \
+        + (r[0][2] * ((r[1][0] * r[2][1]) - (r[1][1] * r[2][0])))
   end
 
   def to_s
@@ -165,8 +198,19 @@ class MayaMeshObject < MayaBaseObject
     # Вершины (xyz)
     @vrts = mesh_data[:vbuf].map { |t| [t[0], t[1], t[2]] }
 
-    # Исходные треугольники
     @ibuf = mesh_data[:ibuf].map { |tri| [tri[0], tri[1], tri[2]] }
+    @have_meterial_name = mesh_right_handed?(mesh_data)
+    # mesh_data[:materials].any? { |m| m[:name] != '' }
+    # Исходные треугольники
+    # @ibuf = mesh_data[:ibuf].map { |tri| [tri[0], tri[2], tri[1]] }
+    # if @node_name == 'pPlaneShape74' || @node_name == 'pPlaneShape75' || @node_name == 'pPlaneShape76'
+    @ibuf = if !@have_meterial_name
+              mesh_data[:ibuf].map { |tri| [tri[0], tri[1], tri[2]] }
+            else
+              mesh_data[:ibuf].map { |tri| [tri[0], tri[2], tri[1]] }
+            end
+    # end
+    # puts @node_name
 
     # Рёбра и faces с подписанным направлением для polyFaces::f
     @edge, @face = build_edges_and_faces_signed(@ibuf)
@@ -188,7 +232,6 @@ class MayaMeshObject < MayaBaseObject
     @materials = mesh_data[:materials].map do |m|
       mat_name = m[:name]
       mat_name = "lambert_#{@node_name}" if mat_name == '' || mat_name.empty?
-      puts m[:alpha]
       a = (m[:alpha] || 1.0).to_f
       {
         mat_name:,
@@ -206,6 +249,53 @@ class MayaMeshObject < MayaBaseObject
         rotateUV: (m[:rotate] || 0).to_i # если у тебя это «четверть-обороты», умножь на 90
       }
     end
+
+    # puts "mesh #{@node_name} #{}"
+  end
+
+  EPS = 1e-8
+
+  def normalize(v)
+    l = Math.sqrt((v[0] * v[0]) + (v[1] * v[1]) + (v[2] * v[2]))
+    return [0.0, 0.0, 0.0] if l < EPS
+
+    [v[0] / l, v[1] / l, v[2] / l]
+  end
+
+  def sub(a, b)  = [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+  def cross(a, b)= [(a[1] * b[2]) - (a[2] * b[1]), (a[2] * b[0]) - (a[0] * b[2]), (a[0] * b[1]) - (a[1] * b[0])]
+  def dot(a, b)  = (a[0] * b[0]) + (a[1] * b[1]) + (a[2] * b[2])
+
+  # из vbuf-строки берём позицию и нормаль (формат: x,y,z,nx,ny,nz, ...):
+  def pos_of(row) = row[0, 3]
+  def nrm_of(row) = row[3, 3]
+
+  def mesh_right_handed?(mesh_data)
+    vbuf = mesh_data[:vbuf]
+    # ibuf = mesh.dig( 'ibuf') || []
+    # return true if vbuf.empty? || ibuf.empty? # по умолчанию считаем праворуким
+
+    pos  = vbuf.map { |r| pos_of(r) }
+    nrm  = vbuf.map { |r| nrm_of(r) }
+
+    pos_cnt = 0
+    neg_cnt = 0
+
+    # puts "aa #{@ibuf}"
+    @ibuf.each do |tri|
+      i0, i1, i2 = tri
+      p0 = pos[i0]
+      p1 = pos[i1]
+      p2 = pos[i2]
+      n_geom = normalize(cross(sub(p1, p0), sub(p2, p0))) # по индексации
+      n_avg  = normalize([nrm[i0][0] + nrm[i1][0] + nrm[i2][0],
+                          nrm[i0][1] + nrm[i1][1] + nrm[i2][1],
+                          nrm[i0][2] + nrm[i1][2] + nrm[i2][2]])
+      s = dot(n_geom, n_avg)
+      s >= 0 ? (pos_cnt += 1) : (neg_cnt += 1)
+    end
+
+    pos_cnt >= neg_cnt # true => праворукий; false => леворукий
   end
 
   # Построение неориентированных рёбер + ПОДПИСАННЫЕ индексы рёбер для f
@@ -252,12 +342,13 @@ class MayaMeshObject < MayaBaseObject
     # str += "\n\tsetAttr \".opposite\" yes;"
     str += "\n\tsetAttr -keyable off \".visibility\";"
     str += "\n\tsetAttr -size 2 \".instObjGroups[0].objectGroups\";"
+    str += "\n\tsetAttr \".opposite\" yes;"
     str += "\n\tsetAttr \".instObjGroups[0].objectGroups[0].objectGrpCompList\" -type \"componentList\" 0;"
     str += "\n\tsetAttr \".instObjGroups[0].objectGroups[1].objectGrpCompList\" -type \"componentList\" 1 \"f[0:#{@face.size - 1}]\";"
 
     # Вершины
     str += "\n\tsetAttr -size #{@vrts.size} \".vrts[0:#{@vrts.size - 1}]\"  \t\t#{@vrts.map do |x, y, z|
-      "#{x} #{y} #{z}"
+      "#{x.to_f} #{y.to_f} #{z.to_f}"
     end.join("\t")};"
 
     # Рёбра
