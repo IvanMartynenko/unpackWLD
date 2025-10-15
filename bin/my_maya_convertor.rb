@@ -19,15 +19,19 @@ class NmfJsonToMaya
       # Find the parent item based on its index
       parent_node = nodes.find { |t| t[:index] == node[:parent_iid] }
       parent_name = parent_node ? parent_node[:name] : nil
-      parent_name = nil if node[:parent_iid] == 1
+      # parent_name = nil if node[:parent_iid] == 1
 
       case node[:word]
+      when 'ROOT'
+        @result.push MayaFrameObject.new(unpacked_node, node_name, parent_name)
       when 'FRAM'
-        @result.push MayaFrameObject.new(unpacked_node, node_name, parent_name, as_joint: true)
+        @result.push MayaFrameObject.new(unpacked_node, node_name, parent_name)
       when 'JOIN'
-        @result.push MayaFrameObject.new(unpacked_node, node_name, parent_name, as_joint: true)
+        @result.push MayaJoinObject.new(unpacked_node, node_name, parent_name)
       when 'MESH'
         @result.push MayaMeshObject.new(unpacked_node, node_name, parent_name)
+      when 'LOCA'
+        @result.push MayaLocatorObject.new(unpacked_node, node_name, parent_name)
       end
     end
   end
@@ -43,85 +47,21 @@ class MayaBaseObject
   end
 end
 
-class MayaFrameObject < MayaBaseObject
-  def initialize(fram_data, node_name = 'transformNode', parent_node_name, as_joint: true)
+class MayaFrameBaseObject < MayaBaseObject
+  def initialize(fram_data, node_name = 'transformNode', parent_node_name)
     @node_name = node_name
     @parent_node_name = parent_node_name
     @translation = fram_data[:translation] || [0, 0, 0]
     @scaling     = fram_data[:scaling]     || [1, 1, 1]
     @rotation    = fram_data[:rotation]    || [0, 0, 0] # radians в базовом значении
 
-    @rpv_t       = fram_data[:rotate_pivot_translate] || [0, 0, 0]
-    @rpv         = fram_data[:rotate_pivot]           || [0, 0, 0]
-    @spv_t       = fram_data[:scale_pivot_translate]  || [0, 0, 0]
-    @spv         = fram_data[:scale_pivot]            || [0, 0, 0]
-    @shear       = fram_data[:shear]                  || [0, 0, 0]
-
     @anim        = fram_data[:anim] || {}
 
     rad2deg = ->(a) { a * 180.0 / Math::PI }
     @rot_deg = @rotation.map { |r| rad2deg.call(r) }
-
-    # puts "#{@node_name} #{signed_scale_from_matrix4(fram_data[:matrix])}"
   end
 
-  def signed_scale_from_matrix4(m, eps: 1e-10)
-    # m — массив 4x4 (Array<Array<Float>>), строки матрицы
-    # puts "#{m}"
-    r0 = m[0][0, 3]
-    r1 = m[1][0, 3]
-    r2 = m[2][0, 3]
-
-    norm = ->(v) { Math.sqrt((v[0] * v[0]) + (v[1] * v[1]) + (v[2] * v[2])) }
-
-    sx = norm.call(r0)
-    sy = norm.call(r1)
-    sz = norm.call(r2)
-
-    # Избегаем деления на ноль
-    nx = sx.abs < eps ? 1.0 : sx
-    ny = sy.abs < eps ? 1.0 : sy
-    nz = sz.abs < eps ? 1.0 : sz
-
-    # Нормализуем 3x3, получаем «ротацию» (возможна с отражением)
-    r = [
-      [r0[0] / nx, r0[1] / nx, r0[2] / nx],
-      [r1[0] / ny, r1[1] / ny, r1[2] / ny],
-      [r2[0] / nz, r2[1] / nz, r2[2] / nz]
-    ]
-
-    # det 3x3
-    (r[0][0] * ((r[1][1] * r[2][2]) - (r[1][2] * r[2][1]))) \
-        - (r[0][1] * ((r[1][0] * r[2][2]) - (r[1][2] * r[2][0]))) \
-        + (r[0][2] * ((r[1][0] * r[2][1]) - (r[1][1] * r[2][0])))
-  end
-
-  def to_s
-    str = +"\n"
-    header = if @parent_node_name
-               "createNode transform -name \"#{@node_name}\" -parent \"#{@parent_node_name}\";"
-             else
-               "createNode transform -name \"#{@node_name}\";"
-             end
-    str << header
-    # базовые TRS (статические значения узла)
-    str << "\n\tsetAttr \".translate\" -type \"double3\" #{@translation.join(' ')};"
-    str << "\n\tsetAttr \".rotate\" -type \"double3\" #{@rot_deg.join(' ')};"
-    str << "\n\tsetAttr \".scale\" -type \"double3\" #{@scaling.join(' ')};"
-    str << "\n\tsetAttr \".rotatePivotTranslate\" -type \"double3\" #{@rpv_t.join(' ')};"
-    str << "\n\tsetAttr \".rotatePivot\" -type \"double3\" #{@rpv.join(' ')};"
-    str << "\n\tsetAttr \".scalePivotTranslate\" -type \"double3\" #{@spv_t.join(' ')};"
-    str << "\n\tsetAttr \".scalePivot\" -type \"double3\" #{@spv.join(' ')};"
-    str << "\n\tsetAttr \".shear\" -type \"double3\" #{@shear.join(' ')};"
-    # str << "\n\tsetAttr \".rotateOrder\" 0;"
-
-    # анимация (если есть)
-    str << emit_trs_animation
-
-    str
-  end
-
-  private
+  protected
 
   # -------- Анимация TRS из @anim --------
   def emit_trs_animation
@@ -190,6 +130,213 @@ class MayaFrameObject < MayaBaseObject
   end
 end
 
+class MayaRootObject < MayaBaseObject
+  def initialize(fram_data, node_name = 'transformNode', parent_node_name)
+    @node_name = node_name
+    @parent_node_name = parent_node_name
+    @matrix = fram_data[:matrix]
+
+    @translation = fram_data[:translation] || [0, 0, 0]
+    @scaling     = fram_data[:scaling]     || [1, 1, 1]
+    @rotation    = fram_data[:rotation]    || [0, 0, 0] # radians в базовом значении
+
+    rad2deg = ->(a) { a * 180.0 / Math::PI }
+    @rot_deg = @rotation.map { |r| rad2deg.call(r) }
+  end
+
+  def to_s
+    str = +"\n"
+    header = if @parent_node_name
+               "createNode transform -name \"#{@node_name}\" -parent \"#{@parent_node_name}\";"
+             else
+               "createNode transform -name \"#{@node_name}\";"
+             end
+    str << header
+
+    rows = @matrix
+    str << "\n\tsetAttr \".matrix\" -type \"matrix\"\n"
+    rows.each { |row| str << "\t\t#{row.map { |v| format('%.6f', v.to_f) }.join(' ')}\n" }
+    str << "\t;\n"
+
+    # базовые TRS (статические значения узла)
+    str << "\n\tsetAttr \".translate\" -type \"double3\" #{@translation.join(' ')};"
+    str << "\n\tsetAttr \".rotate\" -type \"double3\" #{@rot_deg.join(' ')};"
+    str << "\n\tsetAttr \".scale\" -type \"double3\" #{@scaling.join(' ')};"
+
+    str
+  end
+end
+
+class MayaFrameObject < MayaFrameBaseObject
+  def initialize(fram_data, node_name = 'transformNode', parent_node_name)
+    super
+
+    @rpv_t       = fram_data[:rotate_pivot_translate] || [0, 0, 0]
+    @rpv         = fram_data[:rotate_pivot]           || [0, 0, 0]
+    @spv_t       = fram_data[:scale_pivot_translate]  || [0, 0, 0]
+    @spv         = fram_data[:scale_pivot]            || [0, 0, 0]
+    @shear       = fram_data[:shear]                  || [0, 0, 0]
+  end
+
+  def to_s
+    str = +"\n"
+    header = if @parent_node_name
+               "createNode transform -name \"#{@node_name}\" -parent \"#{@parent_node_name}\";"
+             else
+               "createNode transform -name \"#{@node_name}\";"
+             end
+    str << header
+    # базовые TRS (статические значения узла)
+    str << "\n\tsetAttr \".translate\" -type \"double3\" #{@translation.join(' ')};"
+    str << "\n\tsetAttr \".rotate\" -type \"double3\" #{@rot_deg.join(' ')};"
+    str << "\n\tsetAttr \".scale\" -type \"double3\" #{@scaling.join(' ')};"
+    str << "\n\tsetAttr \".rotatePivotTranslate\" -type \"double3\" #{@rpv_t.join(' ')};"
+    str << "\n\tsetAttr \".rotatePivot\" -type \"double3\" #{@rpv.join(' ')};"
+    str << "\n\tsetAttr \".scalePivotTranslate\" -type \"double3\" #{@spv_t.join(' ')};"
+    str << "\n\tsetAttr \".scalePivot\" -type \"double3\" #{@spv.join(' ')};"
+    str << "\n\tsetAttr \".shear\" -type \"double3\" #{@shear.join(' ')};"
+    # str << "\n\tsetAttr \".rotateOrder\" 0;"
+
+    # анимация (если есть)
+    str << emit_trs_animation
+
+    str
+  end
+end
+
+class MayaJoinObject < MayaFrameBaseObject
+  def initialize(fram_data, node_name = 'transformNode', parent_node_name)
+    super
+
+    @matrix           = fram_data[:matrix]               # 16 float (row-major), опционально
+    @rotation_matrix  = fram_data[:rotation_matrix]      # 16 float (row-major), опционально
+
+    # во входных данных лимиты приходят в радианах — конвертнём при выводе в градусы
+    @min_rot_limit    = fram_data[:min_rot_limit]        # [rx, ry, rz] (rad) | nil
+    @max_rot_limit    = fram_data[:max_rot_limit]        # [rx, ry, rz] (rad) | nil
+
+    # jointOrient (в градусах) из rotation_matrix, если дана
+    r3 = extract_3x3(@rotation_matrix)
+    @joint_orient_deg =
+      if r3
+        x, y, z = euler_xyz_from_matrix_rowmajor(r3) # rad
+        [rad2deg(x), rad2deg(y), rad2deg(z)]
+      end
+  end
+
+  def rad2deg(a) = a.to_f * (180.0 / Math::PI)
+  # def deg2rad(a) = a.to_f * Math::PI / 180.0
+
+  # Принимает либо flat-16, либо [[..4],[..4],[..4],[..4]]
+  def extract_3x3(m4)
+    return nil unless m4
+
+    a =
+      if m4.is_a?(Array) && m4.size == 16
+        m4
+      elsif m4.is_a?(Array) && m4.size == 4 && m4.all? { |r| r.is_a?(Array) && r.size == 4 }
+        m4.flatten
+      else
+        return nil
+      end
+    [
+      [a[0], a[1], a[2]],
+      [a[4], a[5], a[6]],
+      [a[8], a[9], a[10]]
+    ]
+  end
+
+  # Эйлеры для порядка XYZ, row-major (R = Rz * Ry * Rx в матричном умножении справа налево)
+  # r:
+  # [ r00 r01 r02
+  #   r10 r11 r12
+  #   r20 r21 r22 ]
+  def euler_xyz_from_matrix_rowmajor(r)
+    r00, r01, r02 = r[0]
+    r10, r11, r12 = r[1]
+    r20, r21, r22 = r[2]
+
+    y = Math.asin(-[[r20, -1.0].max, 1.0].min) # clamp(-1..1)
+    cy = Math.cos(y)
+
+    if cy.abs > 1e-8
+      x = Math.atan2(r21, r22)
+      z = Math.atan2(r10, r00)
+    else
+      # gimbal lock
+      x = Math.atan2(-r12, r11)
+      z = 0.0
+    end
+    [x, y, z]
+  end
+
+  # эвристика: если значения похожи на градусы, не конвертируем
+  def ensure_degrees(vec)
+    return nil unless vec&.size == 3
+
+    max_abs = vec.map(&:abs).max.to_f
+    if max_abs <= ((2 * Math::PI) + 1e-4) # похоже на радианы
+      vec.map { |v| rad2deg(v) }
+    else
+      vec.map(&:to_f) # уже градусы
+    end
+  end
+
+  def to_s
+    str = +"\n"
+    header =
+      if @parent_node_name
+        "createNode joint -name \"#{@node_name}\" -parent \"#{@parent_node_name}\";"
+      else
+        "createNode joint -name \"#{@node_name}\";"
+      end
+    str << header
+
+    rows = @matrix
+    str << "\n\tsetAttr \".matrix\" -type \"matrix\"\n"
+    rows.each { |row| str << "\t\t#{row.map { |v| format('%.6f', v.to_f) }.join(' ')}\n" }
+    str << "\t;\n"
+
+    str << "\n\tsetAttr \".translate\" -type \"double3\" #{@translation.join(' ')};"
+    str << "\n\tsetAttr \".rotate\" -type \"double3\" #{@rot_deg.join(' ')};"
+    str << "\n\tsetAttr \".scale\" -type \"double3\" #{@scaling.join(' ')};"
+
+    # 2) jointOrient — из rotation_matrix (в градусах)
+    if @joint_orient_deg
+      str << "\n\tsetAttr \".jointOrient\" -type \"double3\" #{@joint_orient_deg.map { |d| ('%.6f' % d) }.join(' ')};"
+    end
+
+    str << "\n\tsetAttr \".minRotLimit\" -type \"double3\" #{@min_rot_limit.join(' ')};"
+    str << "\n\tsetAttr \".maxRotLimit\" -type \"double3\" #{@max_rot_limit.join(' ')};"
+
+    # 4) Анимация (если есть) — оставляем как было
+    str << emit_trs_animation
+
+    str
+  end
+end
+
+class MayaLocatorObject
+  def initialize(data, node_name, parent_node_name)
+    @node_name = node_name
+    @parent_node_name = parent_node_name
+  end
+
+  def to_s
+    shape_name = "#{@node_name}Shape"
+    str = +"\n"
+    str << "createNode transform -name \"#{@node_name}\""
+    str << " -parent \"#{@parent_node_name}\"" if @parent_node_name
+    str << ";\n"
+    str << "\tsetAttr \".translate\" -type \"double3\" 0 0 0;\n"
+    str << "\tsetAttr \".rotate\" -type \"double3\" 0 0 0;\n"
+    str << "\tsetAttr \".scale\" -type \"double3\" 1 1 1;\n"
+    str << "createNode locator -name \"#{shape_name}\" -parent \"#{@node_name}\";\n"
+    str << "\tsetAttr \".localScale\" -type \"double3\" 1 1 1;\n"
+    str
+  end
+end
+
 class MayaMeshObject < MayaBaseObject
   def initialize(mesh_data, node_name = 'meshShape', parent_node_name = 'meshTransform')
     @node_name = node_name
@@ -204,10 +351,10 @@ class MayaMeshObject < MayaBaseObject
     # Исходные треугольники
     # @ibuf = mesh_data[:ibuf].map { |tri| [tri[0], tri[2], tri[1]] }
     # if @node_name == 'pPlaneShape74' || @node_name == 'pPlaneShape75' || @node_name == 'pPlaneShape76'
-    @ibuf = if !@have_meterial_name
-              mesh_data[:ibuf].map { |tri| [tri[0], tri[1], tri[2]] }
-            else
+    @ibuf = if @have_meterial_name
               mesh_data[:ibuf].map { |tri| [tri[0], tri[2], tri[1]] }
+            else
+              mesh_data[:ibuf].map { |tri| [tri[0], tri[1], tri[2]] }
             end
     # end
     # puts @node_name
@@ -226,12 +373,18 @@ class MayaMeshObject < MayaBaseObject
       [u, v]
     end
 
+    # flip_v = FLIP_V
+    # @uv0 = mesh_data[:vbuf].map { |t| uv0_of(t, flip_v) }
+    # @uv1 = mesh_data[:vbuf].map { |t| uv1_of(t, flip_v) }.compact
+    # @has_uv1 = @uv1.length == @vrts.length # все вершины имеют UV1
+
     # Индекс UV == индекс вершины (то, что ожидает обратный экспортёр)
     @uv_index_of_vertex = (0...@vrts.length).to_a
 
     @materials = mesh_data[:materials].map do |m|
       mat_name = m[:name]
-      mat_name = "lambert_#{@node_name}" if mat_name == '' || mat_name.empty?
+      mat_name = 'lambert' if mat_name == '' || mat_name.empty?
+      mat_name = "#{mat_name}_#{@node_name}"
       a = (m[:alpha] || 1.0).to_f
       {
         mat_name:,
@@ -250,7 +403,41 @@ class MayaMeshObject < MayaBaseObject
       }
     end
 
-    # puts "mesh #{@node_name} #{}"
+    # puts "mesh #{@node_name}"
+    # ceckA(mesh_data[:vbuf])
+  end
+
+  # def ceckA(vbuf)
+  #   cols = vbuf.map(&:length).min
+  #   puts "min tuple length: #{cols}"
+  #   if cols >= 10
+  #     u2 = vbuf.map { |t| t[8] }.compact
+  #     v2 = vbuf.map { |t| t[9] }.compact
+  #     u2_range = u2.minmax.map { |x| x&.round(6) }
+  #     v2_range = v2.minmax.map { |x| x&.round(6) }
+  #     puts "UV2 ranges: u2=#{u2_range.inspect} v2=#{v2_range.inspect}"
+  #     likely_uv2 = u2.all? && v2.all? && u2_range[0] && v2_range[0] &&
+  #                  u2_range[0] >= -0.5 && u2_range[1] <= 2.0 &&
+  #                  v2_range[0] >= -0.5 && v2_range[1] <= 2.0
+  #     puts "Interpret t[8],t[9] as UV2? => #{likely_uv2}"
+  #   else
+  #     puts 'No columns 8–9 in vbuf.'
+  #   end
+  # end
+  def uv0_of(t, flip_v)
+    u = t[6].to_f
+    v = t[7].to_f
+    v = 1.0 - v if flip_v
+    [u, v]
+  end
+
+  def uv1_of(t, flip_v)
+    return nil unless t.length >= 10
+
+    u = t[8].to_f
+    v = t[9].to_f
+    v = 1.0 - v if flip_v
+    [u, v]
   end
 
   EPS = 1e-8
@@ -359,6 +546,14 @@ class MayaMeshObject < MayaBaseObject
     # UV-пул (.uvpt) — ВАЖНО: пишем ровно по числу вершин; значения НЕ клампим (# FIX)
     str += "\n\tsetAttr -size #{@uvpt.size} \".uvpt[0:#{@uvpt.size - 1}]\" -type \"float2\"\t\t" \
            "#{@uvpt.map { |u, v| "#{u} #{v}" }.each_slice(6).map { |chunk| chunk.join('   ') }.join("\t")};"
+
+    # # UV-пул (.uvpt) — ВАЖНО: пишем ровно по числу вершин; значения НЕ клампим (# FIX)
+    # str += "\n\tsetAttr -size #{@uv0.size} \".uvpt[0].uvpt[0:#{@uv0.size - 1}]\" -type \"float2\"\t\t" \
+    #        "#{@uv0.map { |u, v| "#{u} #{v}" }.each_slice(6).map { |chunk| chunk.join('   ') }.join("\t")};"
+
+    # # UV-пул (.uvpt)
+    # str += "\n\tsetAttr -size #{@uv1.size} \".uvpt[1].uvpt[0:#{@uv1.size - 1}]\" -type \"float2\"\t\t" \
+    #        "#{@uv1.map { |u, v| "#{u} #{v}" }.each_slice(6).map { |chunk| chunk.join('   ') }.join("\t")};"
 
     # polyFaces: f ... и mf (uv-индексы совпадают с индексами вершин)
     face_lines = []

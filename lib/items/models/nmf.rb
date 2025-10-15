@@ -190,14 +190,15 @@ module Wld
       protected
 
       def parse_root
-        res = {}
-        keys = %i[translation scaling rotation]
-        res[:matrix] = @file.floats(MATRIX_SIZE).each_slice(4).to_a
-        keys.each { |key| res[key] = @file.floats(3) }
-        @file.word == 'ANIM' ? parse_anim : nil
-        res[:unknown] = @file.ints(15)
-        # res[:anim] = a if a
-        res
+        return parse_fram
+        # res = {}
+        # keys = %i[translation scaling rotation]
+        # res[:matrix] = @file.floats(MATRIX_SIZE).each_slice(4).to_a
+        # keys.each { |key| res[key] = @file.floats(3) }
+        # @file.word == 'ANIM' ? parse_anim : nil
+        # res[:unknown] = @file.ints(15)
+        # # res[:anim] = a if a
+        # res
       end
 
       def parse_loca
