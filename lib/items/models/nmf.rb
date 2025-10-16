@@ -44,21 +44,11 @@ module Wld
           item_accumulator = BinaryDataBuffer.new
           # item_accumulator.push_word value[:word]
           case value[:word]
-          when 'ROOT'
-            item_accumulator.push_int 2
-            item_accumulator.push_int value[:parent_iid]
-            item_accumulator.push_name value[:name]
-            item_accumulator.push_floats value[:data][:matrix].flatten
-            keys = %i[translation scaling rotation]
-            keys.each { |key| item_accumulator.push_floats value[:data][key] }
-            item_accumulator.push_ints value[:data][:unknown]
-            item_accumulator.push_int 0
-
           when 'LOCA'
             item_accumulator.push_int 0
             item_accumulator.push_int value[:parent_iid]
             item_accumulator.push_name value[:name]
-          when 'FRAM'
+          when 'FRAM', 'ROOT'
             item_accumulator.push_int 2
             item_accumulator.push_int value[:parent_iid]
             item_accumulator.push_name value[:name]
@@ -190,14 +180,7 @@ module Wld
       protected
 
       def parse_root
-        res = {}
-        keys = %i[translation scaling rotation]
-        res[:matrix] = @file.floats(MATRIX_SIZE).each_slice(4).to_a
-        keys.each { |key| res[key] = @file.floats(3) }
-        @file.word == 'ANIM' ? parse_anim : nil
-        res[:unknown] = @file.ints(15)
-        # res[:anim] = a if a
-        res
+        parse_fram
       end
 
       def parse_loca
@@ -232,23 +215,26 @@ module Wld
         res = {}
         sizes = {}
         res[:unknown] = @file.int
-        keys = %i[translation scaling rotation]
+        keys = %i[translation rotation scaling]
         keys.each { |key| res[key] = {} }
         keys.each { |key| sizes[key] = {} }
         keys.each { |key| sizes[key][:sizes] = @file.ints(3) }
-        keys.each { |key| res[key].merge!(parse_curve(sizes[key][:sizes])) }
+        keys.each { |key| res[key].merge!(parse_curve(sizes[key][:sizes], key)) }
         res
       end
 
-      def parse_curve(sizes)
+      def parse_curve(sizes, key)
         res = { values: {}, keys: {} }
         coordinates = %i[x y z]
+
         coordinates.each_with_index do |coord, idx|
-          res[:values][coord] = @file.floats(sizes[idx]) if sizes[idx] > 0
+          n = sizes[idx]
+          next if n <= 0
+
+          res[:keys][coord]   = @file.floats(n)
+          res[:values][coord] = @file.floats(n)
         end
-        coordinates.each_with_index do |coord, idx|
-          res[:keys][coord] = @file.ints(sizes[idx]) if sizes[idx] > 0
-        end
+
         res
       end
 
@@ -343,7 +329,8 @@ module Wld
         accumulator.push_word 'ANIM'
         accumulator.push_int item[:unknown]
 
-        keys = %i[translation scaling rotation]
+        keys = %i[translation rotation scaling]
+
         keys.each do |key|
           %i[x y z].each do |coord|
             accumulator.push_int item[key][:values][coord] ? item[key][:values][coord].size : 0
@@ -352,10 +339,10 @@ module Wld
 
         keys.each do |key|
           %i[x y z].each do |coord|
-            accumulator.push_floats item[key][:values][coord] if item[key][:values][coord]
-          end
-          %i[x y z].each do |coord|
-            accumulator.push_ints item[key][:keys][coord] if item[key][:keys][coord]
+            next unless item[key][:keys][coord]
+
+            accumulator.push_floats item[key][:keys][coord]
+            accumulator.push_floats item[key][:values][coord]
           end
         end
 

@@ -287,14 +287,16 @@ Same structure as **Model List Tree Folder**.
 | ---------------------------- | ------------ | ---------------------------------------- |
 | `flag`                       | `bool (int)` | Unknown flag.                            |
 | `translation_sizes`          | `int32[3]`   | Key counts for X/Y/Z.                    |
-| `scaling_sizes`              | `int32[3]`   | Key counts for X/Y/Z.                    |
 | `rotation_sizes`             | `int32[3]`   | Key counts for X/Y/Z.                    |
+| `scaling_sizes`              | `int32[3]`   | Key counts for X/Y/Z.                    |
+| `translation_curve_keys_*`   | `float[]`    | Key indices per axis.                    |
 | `translation_curve_values_*` | `float[]`    | Values for each axis; lengths per sizes. |
-| `translation_curve_keys_*`   | `int32[]`    | Key indices per axis.                    |
-| `scaling_curve_values_*`     | `float[]`    | Values for each axis; lengths per sizes. |
-| `scaling_curve_keys_*`       | `int32[]`    | Key indices per axis.                    |
+| `rotation_curve_keys_*`      | `float[]`    | Key indices per axis.                    |
 | `rotation_curve_values_*`    | `float[]`    | Values for each axis; lengths per sizes. |
-| `rotation_curve_keys_*`      | `int32[]`    | Key indices per axis.                    |
+| `scaling_curve_keys_*`       | `float[]`    | Key indices per axis.                    |
+| `scaling_curve_values_*`     | `float[]`    | Values for each axis; lengths per sizes. |
+
+
 
 ### MESH
 
