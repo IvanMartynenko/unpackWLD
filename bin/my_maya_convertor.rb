@@ -4,6 +4,7 @@
 require 'json'
 FPS = 24.0
 DEG2RAD = Math::PI / 180.0
+RAD2DEG = 180.0 / Math::PI
 
 def fmt_f(x)
   format('%.9f', x.to_f).sub(/\.?0+$/, '') # компактно без лишних нулей
@@ -19,7 +20,7 @@ class NmfJsonToMaya
       # Find the parent item based on its index
       parent_node = nodes.find { |t| t[:index] == node[:parent_iid] }
       parent_name = parent_node ? parent_node[:name] : nil
-      # parent_name = nil if node[:parent_iid] == 1
+      parent_name = nil if node[:parent_iid] == 1
 
       case node[:word]
       when 'ROOT'
@@ -208,37 +209,23 @@ class MayaJoinObject < MayaFrameBaseObject
   def initialize(fram_data, node_name = 'transformNode', parent_node_name)
     super
 
-    @matrix           = fram_data[:matrix]               # 16 float (row-major), опционально
-    @rotation_matrix  = fram_data[:rotation_matrix]      # 16 float (row-major), опционально
+    @matrix          = fram_data[:matrix]          # 16 float (row-major), опционально
+    @rotation_matrix = fram_data[:rotation_matrix] # 16 float (row-major), опционально
 
-    # во входных данных лимиты приходят в радианах — конвертнём при выводе в градусы
-    @min_rot_limit    = fram_data[:min_rot_limit]        # [rx, ry, rz] (rad) | nil
-    @max_rot_limit    = fram_data[:max_rot_limit]        # [rx, ry, rz] (rad) | nil
+    # во входных данных лимиты приходят в радианах — конвертнём при выводе в градусы (ниже)
+    @min_rot_limit   = fram_data[:min_rot_limit]   # [rx, ry, rz] (rad) | nil
+    @max_rot_limit   = fram_data[:max_rot_limit]   # [rx, ry, rz] (rad) | nil
 
-    # jointOrient (в градусах) из rotation_matrix, если дана
-    r3 = extract_3x3(@rotation_matrix)
-    @joint_orient_deg =
-      if r3
-        x, y, z = euler_xyz_from_matrix_rowmajor(r3) # rad
-        [rad2deg(x), rad2deg(y), rad2deg(z)]
-      end
+    m3 = extract_3x3(@rotation_matrix)
+    @joint_orient = matrix_rowmajor_to_euler_xyz_standard(m3)
+    # puts ""
+    puts "{name: \"#{@node_name}\", values: #{@joint_orient}, ref: #{m3} }, "
   end
 
-  def rad2deg(a) = a.to_f * (180.0 / Math::PI)
-  # def deg2rad(a) = a.to_f * Math::PI / 180.0
-
-  # Принимает либо flat-16, либо [[..4],[..4],[..4],[..4]]
   def extract_3x3(m4)
     return nil unless m4
 
-    a =
-      if m4.is_a?(Array) && m4.size == 16
-        m4
-      elsif m4.is_a?(Array) && m4.size == 4 && m4.all? { |r| r.is_a?(Array) && r.size == 4 }
-        m4.flatten
-      else
-        return nil
-      end
+    a = m4.flatten
     [
       [a[0], a[1], a[2]],
       [a[4], a[5], a[6]],
@@ -246,42 +233,40 @@ class MayaJoinObject < MayaFrameBaseObject
     ]
   end
 
-  # Эйлеры для порядка XYZ, row-major (R = Rz * Ry * Rx в матричном умножении справа налево)
-  # r:
-  # [ r00 r01 r02
-  #   r10 r11 r12
-  #   r20 r21 r22 ]
-  def euler_xyz_from_matrix_rowmajor(r)
-    r00, r01, r02 = r[0]
-    r10, r11, r12 = r[1]
-    r20, r21, r22 = r[2]
+  def matrix_rowmajor_to_euler_xyz_standard(m)
+    # Берём элементы исходной row-major матрицы
+    m00, m01, m02 = m[0]
+    m10, m11, m12 = m[1]
+    m20, m21, m22 = m[2]
 
-    y = Math.asin(-[[r20, -1.0].max, 1.0].min) # clamp(-1..1)
-    cy = Math.cos(y)
+    # Явно переходим к "игровой" конвенции: используем транспонированную матрицу
+    r00 = m00
+    r01 = m10
+    r02 = m20
+    r10 = m01
+    r11 = m11
+    r12 = m21
+    r20 = m02
+    r21 = m12
+    r22 = m22
 
-    if cy.abs > 1e-8
+    # Классическая XYZ (intrinsic): R = Rz(z) * Ry(y) * Rx(x)
+    # y = asin(-r20), см. ваш коммент и прямую функцию
+    if r20.abs < 0.999999
+      y = Math.asin(-r20)
       x = Math.atan2(r21, r22)
       z = Math.atan2(r10, r00)
     else
-      # gimbal lock
+      # Gimbal lock
+      y = Math.asin(-r20)
       x = Math.atan2(-r12, r11)
       z = 0.0
     end
-    [x, y, z]
+
+    [x, y, z].map { |v| v * RAD2DEG }
   end
 
-  # эвристика: если значения похожи на градусы, не конвертируем
-  def ensure_degrees(vec)
-    return nil unless vec&.size == 3
-
-    max_abs = vec.map(&:abs).max.to_f
-    if max_abs <= ((2 * Math::PI) + 1e-4) # похоже на радианы
-      vec.map { |v| rad2deg(v) }
-    else
-      vec.map(&:to_f) # уже градусы
-    end
-  end
-
+  # ---------- Вывод ----------
   def to_s
     str = +"\n"
     header =
@@ -292,26 +277,15 @@ class MayaJoinObject < MayaFrameBaseObject
       end
     str << header
 
-    rows = @matrix
-    str << "\n\tsetAttr \".matrix\" -type \"matrix\"\n"
-    rows.each { |row| str << "\t\t#{row.map { |v| format('%.6f', v.to_f) }.join(' ')}\n" }
-    str << "\t;\n"
-
     str << "\n\tsetAttr \".translate\" -type \"double3\" #{@translation.join(' ')};"
     str << "\n\tsetAttr \".rotate\" -type \"double3\" #{@rot_deg.join(' ')};"
     str << "\n\tsetAttr \".scale\" -type \"double3\" #{@scaling.join(' ')};"
 
-    # 2) jointOrient — из rotation_matrix (в градусах)
-    if @joint_orient_deg
-      str << "\n\tsetAttr \".jointOrient\" -type \"double3\" #{@joint_orient_deg.map { |d| ('%.6f' % d) }.join(' ')};"
-    end
-
+    str << "\n\tsetAttr \".jointOrient\" -type \"double3\" #{@joint_orient.map { |d| ('%.6f' % d) }.join(' ')};"
     str << "\n\tsetAttr \".minRotLimit\" -type \"double3\" #{@min_rot_limit.join(' ')};"
     str << "\n\tsetAttr \".maxRotLimit\" -type \"double3\" #{@max_rot_limit.join(' ')};"
 
-    # 4) Анимация (если есть) — оставляем как было
     str << emit_trs_animation
-
     str
   end
 end
