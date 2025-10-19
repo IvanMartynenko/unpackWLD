@@ -571,11 +571,12 @@ end
 # ----------------------------------- CLI -------------------------------------
 
 def main(argv)
-  if argv.length != 2
-    warn "Usage: ruby #{File.basename($0)} input.json output.x"
+  if argv.length != 1
+    warn "Usage: ruby #{File.basename($0)} input.json"
     exit 1
   end
-  inp, outp = argv
+  inp = argv.first
+  outp = inp.sub('.json', '.x')
   data = XDataPreparer.new.prepare(inp)
   XFileWriter.new.write(data, outp)
 end
