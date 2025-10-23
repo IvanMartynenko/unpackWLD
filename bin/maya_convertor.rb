@@ -6,10 +6,6 @@ FPS = 24.0
 DEG2RAD = Math::PI / 180.0
 RAD2DEG = 180.0 / Math::PI
 
-def fmt_f(x)
-  format('%.9f', x.to_f).sub(/\.?0+$/, '')
-end
-
 class NmfJsonToMaya
   def initialize(nodes)
     @result = []
@@ -55,13 +51,49 @@ class MayaFrameBaseObject < MayaBaseObject
     @scaling     = fram_data[:scaling]     || [1, 1, 1]
     @rotation    = fram_data[:rotation]    || [0, 0, 0] # radians
 
-    @anim        = fram_data[:anim] || {}
+    @anim        = build_tracks_by_axis(fram_data[:anim] || {})
 
     rad2deg = ->(a) { a * 180.0 / Math::PI }
     @rot_deg = @rotation.map { |r| rad2deg.call(r) }
   end
 
   protected
+
+  def build_tracks_by_axis(raw_values)
+    axes = %i[x y z]
+    result = {}
+
+    %i[translation rotation scaling].each do |track|
+      anim = raw_values[track]
+      next unless anim
+
+      keys   = anim[:keys]
+      values = anim[:values]
+      next unless keys && values
+
+      track_hash = {}
+
+      axes.each do |ax|
+        tlist = keys[ax]
+        vlist = values[ax]
+        next unless tlist
+        next unless vlist
+        next if tlist.empty? || vlist.empty?
+
+        frames = tlist.map { |t| t.to_f * FPS }
+        vals   = vlist.map { |v| v.to_f }
+
+        # rotation: радианы -> градусы
+        vals = vals.map { |v| v / DEG2RAD } if track == :rotation
+
+        track_hash[ax] = { frames: frames, values: vals }
+      end
+
+      result[track] = track_hash unless track_hash.empty?
+    end
+
+    result
+  end
 
   def emit_trs_animation
     return '' if @anim.nil? || @anim.empty?
@@ -74,24 +106,20 @@ class MayaFrameBaseObject < MayaBaseObject
     }.each do |track, spec|
       next unless @anim[track]
 
-      values = @anim[track][:values] || {}
-      keys   = @anim[track][:keys]   || {}
-
       spec[:axes].each_with_index do |ax, i|
-        vlist = values[ax] || values[ax.to_s] || []
-        tlist = keys[ax]   || keys[ax.to_s]   || []
-        next if vlist.nil? || tlist.nil? || vlist.empty? || tlist.empty?
-
-        frames = tlist.map { |t| (t.to_f * FPS) }
-        vlist.map! { |v| v / DEG2RAD } if track == :rotation
+        next if @anim[track][ax].nil? || @anim[track][ax].empty?
 
         curve_name = "#{@node_name}_#{spec[:attrs][i]}"
-        out << build_anim_curve(spec[:curve], curve_name, frames, vlist)
+        out << build_anim_curve(spec[:curve], curve_name, @anim[track][ax][:frames], @anim[track][ax][:values])
         out << connect_curve(curve_name, "#{@node_name}.#{spec[:attrs][i]}")
       end
     end
 
     out
+  end
+
+  def fmt_f(x)
+    format('%.9f', x.to_f).sub(/\.?0+$/, '')
   end
 
   def build_anim_curve(curve_type, curve_name, frames, values)
@@ -108,42 +136,6 @@ class MayaFrameBaseObject < MayaBaseObject
 
   def connect_curve(curve_name, dst_attr)
     "\nconnectAttr \"#{curve_name}.output\" \"#{dst_attr}\";"
-  end
-end
-
-class MayaRootObject < MayaBaseObject
-  def initialize(fram_data, node_name = 'transformNode', parent_node_name)
-    @node_name = node_name
-    @parent_node_name = parent_node_name
-    @matrix = fram_data[:matrix]
-
-    @translation = fram_data[:translation] || [0, 0, 0]
-    @scaling     = fram_data[:scaling]     || [1, 1, 1]
-    @rotation    = fram_data[:rotation]    || [0, 0, 0]
-
-    rad2deg = ->(a) { a * 180.0 / Math::PI }
-    @rot_deg = @rotation.map { |r| rad2deg.call(r) }
-  end
-
-  def to_s
-    str = +"\n"
-    header = if @parent_node_name
-               "createNode transform -name \"#{@node_name}\" -parent \"#{@parent_node_name}\";"
-             else
-               "createNode transform -name \"#{@node_name}\";"
-             end
-    str << header
-
-    rows = @matrix
-    str << "\n\tsetAttr \".matrix\" -type \"matrix\"\n"
-    rows.each { |row| str << "\t\t#{row.map { |v| format('%.6f', v.to_f) }.join(' ')}\n" }
-    str << "\t;\n"
-
-    str << "\n\tsetAttr \".translate\" -type \"double3\" #{@translation.join(' ')};"
-    str << "\n\tsetAttr \".rotate\" -type \"double3\" #{@rot_deg.join(' ')};"
-    str << "\n\tsetAttr \".scale\" -type \"double3\" #{@scaling.join(' ')};"
-
-    str
   end
 end
 
@@ -271,6 +263,52 @@ class MayaLocatorObject
   end
 end
 
+module MeshGeom
+  EPS = 1e-8
+
+  module_function
+
+  # private
+  def normalize(v)
+    l = Math.sqrt((v[0] * v[0]) + (v[1] * v[1]) + (v[2] * v[2]))
+    return [0.0, 0.0, 0.0] if l < EPS
+
+    [v[0] / l, v[1] / l, v[2] / l]
+  end
+
+  def sub(a, b)  = [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+  def cross(a, b)= [(a[1] * b[2]) - (a[2] * b[1]), (a[2] * b[0]) - (a[0] * b[2]), (a[0] * b[1]) - (a[1] * b[0])]
+  def dot(a, b)  = (a[0] * b[0]) + (a[1] * b[1]) + (a[2] * b[2])
+  def pos_of(row) = row[0, 3]
+  def nrm_of(row) = row[3, 3]
+
+  # public
+  def mesh_right_handed?(ibuf, mesh_data)
+    vbuf = mesh_data[:vbuf]
+
+    pos  = vbuf.map { |r| pos_of(r) }
+    nrm  = vbuf.map { |r| nrm_of(r) }
+
+    pos_cnt = 0
+    neg_cnt = 0
+
+    ibuf.each do |tri|
+      i0, i1, i2 = tri
+      p0 = pos[i0]
+      p1 = pos[i1]
+      p2 = pos[i2]
+      n_geom = normalize(cross(sub(p1, p0), sub(p2, p0)))
+      n_avg  = normalize([nrm[i0][0] + nrm[i1][0] + nrm[i2][0],
+                          nrm[i0][1] + nrm[i1][1] + nrm[i2][1],
+                          nrm[i0][2] + nrm[i1][2] + nrm[i2][2]])
+      s = dot(n_geom, n_avg)
+      s >= 0 ? (pos_cnt += 1) : (neg_cnt += 1)
+    end
+
+    pos_cnt >= neg_cnt # true => праворукий; false => леворукий
+  end
+end
+
 class MayaMeshObject < MayaBaseObject
   def initialize(mesh_data, node_name = 'meshShape', parent_node_name = 'meshTransform')
     @node_name = node_name
@@ -278,8 +316,7 @@ class MayaMeshObject < MayaBaseObject
 
     @vrts = mesh_data[:vbuf].map { |t| [t[0], t[1], t[2]] }
     @ibuf = mesh_data[:ibuf].map { |tri| [tri[0], tri[1], tri[2]] }
-    @have_meterial_name = mesh_right_handed?(mesh_data)
-    @ibuf = if @have_meterial_name
+    @ibuf = if MeshGeom.mesh_right_handed?(@ibuf, mesh_data)
               mesh_data[:ibuf].map { |tri| [tri[0], tri[2], tri[1]] }
             else
               mesh_data[:ibuf].map { |tri| [tri[0], tri[1], tri[2]] }
@@ -325,62 +362,6 @@ class MayaMeshObject < MayaBaseObject
         file_name: "#{mat_name}_file"
       }
     end
-  end
-
-  def uv0_of(t, flip_v)
-    u = t[6].to_f
-    v = t[7].to_f
-    v = 1.0 - v if flip_v
-    [u, v]
-  end
-
-  def uv1_of(t, flip_v)
-    return nil unless t.length >= 10
-
-    u = t[8].to_f
-    v = t[9].to_f
-    v = 1.0 - v if flip_v
-    [u, v]
-  end
-
-  EPS = 1e-8
-
-  def normalize(v)
-    l = Math.sqrt((v[0] * v[0]) + (v[1] * v[1]) + (v[2] * v[2]))
-    return [0.0, 0.0, 0.0] if l < EPS
-
-    [v[0] / l, v[1] / l, v[2] / l]
-  end
-
-  def sub(a, b)  = [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-  def cross(a, b)= [(a[1] * b[2]) - (a[2] * b[1]), (a[2] * b[0]) - (a[0] * b[2]), (a[0] * b[1]) - (a[1] * b[0])]
-  def dot(a, b)  = (a[0] * b[0]) + (a[1] * b[1]) + (a[2] * b[2])
-  def pos_of(row) = row[0, 3]
-  def nrm_of(row) = row[3, 3]
-
-  def mesh_right_handed?(mesh_data)
-    vbuf = mesh_data[:vbuf]
-
-    pos  = vbuf.map { |r| pos_of(r) }
-    nrm  = vbuf.map { |r| nrm_of(r) }
-
-    pos_cnt = 0
-    neg_cnt = 0
-
-    @ibuf.each do |tri|
-      i0, i1, i2 = tri
-      p0 = pos[i0]
-      p1 = pos[i1]
-      p2 = pos[i2]
-      n_geom = normalize(cross(sub(p1, p0), sub(p2, p0)))
-      n_avg  = normalize([nrm[i0][0] + nrm[i1][0] + nrm[i2][0],
-                          nrm[i0][1] + nrm[i1][1] + nrm[i2][1],
-                          nrm[i0][2] + nrm[i1][2] + nrm[i2][2]])
-      s = dot(n_geom, n_avg)
-      s >= 0 ? (pos_cnt += 1) : (neg_cnt += 1)
-    end
-
-    pos_cnt >= neg_cnt # true => праворукий; false => леворукий
   end
 
   def build_edges_and_faces_signed(tris)
@@ -470,7 +451,6 @@ class MayaMeshObject < MayaBaseObject
 
         str << %(createNode file -name "#{material[:file_name]}";\n)
         str << %(\tsetAttr ".fileTextureName" -type "string" "#{material[:tex_path]}";\n)
-
 
         str << %(connectAttr "#{material[:place2d_name]}.coverage"           "#{material[:file_name]}.coverage";\n)
         str << %(connectAttr "#{material[:place2d_name]}.translateFrame"     "#{material[:file_name]}.translateFrame";\n)
