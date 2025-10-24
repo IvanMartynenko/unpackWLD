@@ -6,183 +6,6 @@ FPS = 24.0
 DEG2RAD = Math::PI / 180.0
 RAD2DEG = 180.0 / Math::PI
 
-module NmfJsonToMaya
-  module_function
-
-  def create(nodes)
-    result = []
-    nodes.each do |node|
-      unpacked_node = node[:data]
-      node_name = node[:name]
-
-      parent_node = nodes.find { |t| t[:index] == node[:parent_iid] }
-      parent_name = parent_node ? parent_node[:name] : nil
-      parent_name = nil if node[:parent_iid] == 1
-
-      case node[:word]
-      when 'ROOT'
-        result.push MayaFrameObject.create(unpacked_node, node_name: node_name, parent_node_name: parent_name)
-      when 'FRAM'
-        result.push MayaFrameObject.create(unpacked_node, node_name: node_name, parent_node_name: parent_name)
-      when 'JOIN'
-        result.push MayaJoinObject.create(unpacked_node, node_name: node_name, parent_node_name: parent_name)
-      when 'MESH'
-        result.push MayaMeshObject.create(unpacked_node, node_name: node_name, parent_node_name: parent_name)
-      when 'LOCA'
-        result.push MayaLocatorObject.create(unpacked_node, node_name: node_name, parent_node_name: parent_name)
-      end
-    end
-
-    result
-  end
-end
-
-module MayaFrameBaseObject
-  module_function
-
-  def create(fram_data, parent_node_name:, node_name: 'transformNode')
-    result = {}
-    result[:node_name] = node_name
-    result[:parent_node_name] = parent_node_name
-    result[:translation] = fram_data[:translation]
-    result[:scaling]     = fram_data[:scaling]
-    result[:rotation]    = fram_data[:rotation] # radians
-
-    anim = build_tracks_by_axis(fram_data[:anim] || {})
-    result[:with_animation] = !anim.empty?
-    result[:animations] = anim
-
-    rad2deg = ->(a) { a * 180.0 / Math::PI }
-    result[:rot_deg] = result[:rotation].map { |r| rad2deg.call(r) }
-
-    result
-  end
-
-  def build_tracks_by_axis(raw_values)
-    axes = %i[x y z]
-    result = {}
-
-    %i[translation rotation scaling].each do |track|
-      anim = raw_values[track]
-      next unless anim
-
-      keys   = anim[:keys]
-      values = anim[:values]
-      next unless keys && values
-
-      track_hash = {}
-
-      axes.each do |ax|
-        tlist = keys[ax]
-        vlist = values[ax]
-        next unless tlist
-        next unless vlist
-        next if tlist.empty? || vlist.empty?
-
-        frames = tlist.map { |t| t.to_f * FPS } # from second to FPS
-        vals   = vlist.map { |v| v.to_f }
-
-        # rotation: радианы -> градусы
-        vals = vals.map { |v| v / DEG2RAD } if track == :rotation
-
-        track_hash[ax] = { frames: frames, values: vals }
-      end
-
-      result[track] = track_hash unless track_hash.empty?
-    end
-
-    result
-  end
-end
-
-module MayaFrameObject
-  module_function
-
-  def create(fram_data, parent_node_name:, node_name: 'transformNode')
-    result = MayaFrameBaseObject.create(fram_data, node_name:, parent_node_name:)
-    result[:node_type] = 'fram'
-
-    result[:matrix]      = fram_data[:matrix] # 16 float (row-major)
-    result[:rpv_t]       = fram_data[:rotate_pivot_translate]
-    result[:rpv]         = fram_data[:rotate_pivot]
-    result[:spv_t]       = fram_data[:scale_pivot_translate]
-    result[:spv]         = fram_data[:scale_pivot]
-    result[:shear]       = fram_data[:shear]
-
-    result
-  end
-end
-
-module MayaJoinObject
-  module_function
-
-  def create(fram_data, parent_node_name:, node_name: 'transformNode')
-    result = MayaFrameBaseObject.create(fram_data, node_name:, parent_node_name:)
-
-    result[:node_type] = 'join'
-    result[:matrix]          = fram_data[:matrix]          # 16 float (row-major)
-    result[:rotation_matrix] = fram_data[:rotation_matrix] # 16 float (row-major)
-
-    result[:min_rot_limit]   = fram_data[:min_rot_limit]   # [rx, ry, rz] (rad)
-    result[:max_rot_limit]   = fram_data[:max_rot_limit]   # [rx, ry, rz] (rad)
-
-    m3 = extract_3x3(result[:rotation_matrix])
-    result[:joint_orient] = matrix_rowmajor_to_euler_xyz_standard(m3)
-
-    result
-  end
-
-  def extract_3x3(m4)
-    return nil unless m4
-
-    a = m4.flatten
-    [
-      [a[0], a[1], a[2]],
-      [a[4], a[5], a[6]],
-      [a[8], a[9], a[10]]
-    ]
-  end
-
-  def matrix_rowmajor_to_euler_xyz_standard(m)
-    m00, m01, m02 = m[0]
-    m10, m11, m12 = m[1]
-    m20, m21, m22 = m[2]
-
-    r00 = m00
-    r01 = m10
-    r02 = m20
-    r10 = m01
-    r11 = m11
-    r12 = m21
-    r20 = m02
-    r21 = m12
-    r22 = m22
-
-    if r20.abs < 0.999999
-      y = Math.asin(-r20)
-      x = Math.atan2(r21, r22)
-      z = Math.atan2(r10, r00)
-    else
-      y = Math.asin(-r20)
-      x = Math.atan2(-r12, r11)
-      z = 0.0
-    end
-
-    [x, y, z].map { |v| v * RAD2DEG }
-  end
-end
-
-module MayaLocatorObject
-  module_function
-
-  def create(_, node_name:, parent_node_name:)
-    result = { node_type: 'locator' }
-    result[:node_name] = node_name
-    result[:parent_node_name] = parent_node_name
-    result
-  end
-end
-
 module MeshGeom
   EPS = 1e-8
 
@@ -229,104 +52,261 @@ module MeshGeom
   end
 end
 
-module MayaMeshObject
-  module_function
+def convert_nodes(nodes)
+  result = []
+  nodes.each do |node|
+    unpacked_node = node[:data]
+    node_name = node[:name]
 
-  def create(mesh_data, node_name: 'meshShape', parent_node_name: 'meshTransform')
-    result = { node_type: 'mesh' }
-    result[:node_name] = node_name
-    result[:parent_node_name] = parent_node_name
+    parent_node = nodes.find { |t| t[:index] == node[:parent_iid] }
+    parent_name = parent_node ? parent_node[:name] : nil
+    parent_name = nil if node[:parent_iid] == 1
 
-    result[:vrts] = mesh_data[:vbuf].map { |t| [t[0], t[1], t[2]] }
-    ibuf = mesh_data[:ibuf].map { |tri| [tri[0], tri[1], tri[2]] }
-    ibuf = if MeshGeom.mesh_right_handed?(ibuf, mesh_data)
-             mesh_data[:ibuf].map { |tri| [tri[0], tri[2], tri[1]] }
-           else
-             mesh_data[:ibuf].map { |tri| [tri[0], tri[1], tri[2]] }
-           end
-    result[:ibuf] = ibuf
-
-    edge, face = build_edges_and_faces_signed(ibuf)
-    result[:edge] = edge
-    result[:face] = face
-    result[:edge].map! { |e| e.length == 2 ? e + [0] : e }
-
-    result[:materials] = mesh_data[:materials]
-
-    result[:uvpt] = mesh_data[:vbuf].map do |t|
-      u = (t[6] || 0.0).to_f
-      v = (t[7] || 0.0).to_f
-      [u, v]
+    case node[:word]
+    when 'ROOT'
+      result.push create_fram(unpacked_node, node_name: node_name, parent_node_name: parent_name)
+    when 'FRAM'
+      result.push create_fram(unpacked_node, node_name: node_name, parent_node_name: parent_name)
+    when 'JOIN'
+      result.push create_joint(unpacked_node, node_name: node_name, parent_node_name: parent_name)
+    when 'LOCA'
+      result.push create_locator(unpacked_node, node_name: node_name, parent_node_name: parent_name)
+    when 'MESH'
+      result.push create_mesh(unpacked_node, node_name: node_name, parent_node_name: parent_name)
     end
-
-    result[:uv_index_of_vertex] = (0...result[:vrts].length).to_a
-
-    result[:materials] = mesh_data[:materials].map do |m|
-      mat_name = m[:name]
-      mat_name = 'lambert' if mat_name == '' || mat_name.empty?
-      mat_name = "#{mat_name}_#{result[:node_name]}"
-      a = m[:alpha].to_f
-
-      tex_path = m.dig(:texture, :name)
-      tex_path = tex_path&.tr('\\', '/') # Maya отлично ест forward-slash
-      {
-        mat_name:,
-        sg_name: "#{mat_name}SG",
-        r: m[:red].to_f,
-        g: m[:green].to_f,
-        b: m[:blue].to_f,
-        a:,
-        t: a,
-        repeatU: m[:horizontal_stretch].to_i,
-        repeatV: m[:vertical_stretch].to_i,
-        mirrorU: m[:uv_mapping_flip_horizontal].to_i,
-        mirrorV: m[:uv_mapping_flip_vertical].to_i,
-        rotateUV: m[:rotate].to_i,
-        tex_path: tex_path,
-        has_tex: !tex_path.nil? && !tex_path.empty?,
-        place2d_name: "#{mat_name}_place2d",
-        file_name: "#{mat_name}_file"
-      }
-    end
-
-    result
   end
 
-  def build_edges_and_faces_signed(tris)
-    edge_map = {}
-    edges    = []
-
-    tris.each do |(a, b, c)|
-      [[a, b], [b, c], [c, a]].each do |u, v|
-        va, vb = [u, v].minmax
-        key = "#{va}|#{vb}"
-        unless edge_map.key?(key)
-          edge_map[key] = edges.length
-          edges << [va, vb]
-        end
-      end
-    end
-
-    faces_signed = tris.map do |(a, b, c)|
-      e0 = signed_edge_index(edge_map, a, b)
-      e1 = signed_edge_index(edge_map, b, c)
-      e2 = signed_edge_index(edge_map, c, a)
-      [e0, e1, e2]
-    end
-
-    [edges, faces_signed]
-  end
-
-  def signed_edge_index(edge_map, a, b)
-    va, vb = [a, b].minmax
-    idx = edge_map["#{va}|#{vb}"]
-    raise "edge not found for #{a}-#{b}" unless idx
-
-    same_dir = (a == va) && (b == vb)
-    same_dir ? idx : -(idx + 1)
-  end
+  result
 end
 
+# HELPER FUNCTION
+def animation_build_tracks_by_axis(raw_values)
+  axes = %i[x y z]
+  result = {}
+
+  %i[translation rotation scaling].each do |track|
+    anim = raw_values[track]
+    next unless anim
+
+    keys   = anim[:keys]
+    values = anim[:values]
+    next unless keys && values
+
+    track_hash = {}
+
+    axes.each do |ax|
+      tlist = keys[ax]
+      vlist = values[ax]
+      next unless tlist
+      next unless vlist
+      next if tlist.empty? || vlist.empty?
+
+      frames = tlist.map { |t| t.to_f * FPS } # from second to FPS
+      vals   = vlist.map { |v| v.to_f }
+
+      # rotation: радианы -> градусы
+      vals = vals.map { |v| v / DEG2RAD } if track == :rotation
+
+      track_hash[ax] = { frames: frames, values: vals }
+    end
+
+    result[track] = track_hash unless track_hash.empty?
+  end
+
+  result
+end
+
+def extract_3x3(m4)
+  return nil unless m4
+
+  a = m4.flatten
+  [
+    [a[0], a[1], a[2]],
+    [a[4], a[5], a[6]],
+    [a[8], a[9], a[10]]
+  ]
+end
+
+def matrix_rowmajor_to_euler_xyz_standard(m)
+  m00, m01, m02 = m[0]
+  m10, m11, m12 = m[1]
+  m20, m21, m22 = m[2]
+
+  r00 = m00
+  r01 = m10
+  r02 = m20
+  r10 = m01
+  r11 = m11
+  r12 = m21
+  r20 = m02
+  r21 = m12
+  r22 = m22
+
+  if r20.abs < 0.999999
+    y = Math.asin(-r20)
+    x = Math.atan2(r21, r22)
+    z = Math.atan2(r10, r00)
+  else
+    y = Math.asin(-r20)
+    x = Math.atan2(-r12, r11)
+    z = 0.0
+  end
+
+  [x, y, z].map { |v| v * RAD2DEG }
+end
+
+def build_edges_and_faces_signed(tris)
+  edge_map = {}
+  edges    = []
+
+  tris.each do |(a, b, c)|
+    [[a, b], [b, c], [c, a]].each do |u, v|
+      va, vb = [u, v].minmax
+      key = "#{va}|#{vb}"
+      unless edge_map.key?(key)
+        edge_map[key] = edges.length
+        edges << [va, vb]
+      end
+    end
+  end
+
+  faces_signed = tris.map do |(a, b, c)|
+    e0 = signed_edge_index(edge_map, a, b)
+    e1 = signed_edge_index(edge_map, b, c)
+    e2 = signed_edge_index(edge_map, c, a)
+    [e0, e1, e2]
+  end
+
+  [edges, faces_signed]
+end
+
+def signed_edge_index(edge_map, a, b)
+  va, vb = [a, b].minmax
+  idx = edge_map["#{va}|#{vb}"]
+  raise "edge not found for #{a}-#{b}" unless idx
+
+  same_dir = (a == va) && (b == vb)
+  same_dir ? idx : -(idx + 1)
+end
+
+# CONVERT FUNCTION
+def create_fram(fram_data, parent_node_name:, node_name:)
+  result = {}
+  result[:node_name] = node_name
+  result[:parent_node_name] = parent_node_name
+  result[:translation] = fram_data[:translation]
+  result[:scaling]     = fram_data[:scaling]
+  result[:rotation] = fram_data[:rotation].map { |r| r * RAD2DEG }
+
+  result[:node_type] = 'fram'
+
+  result[:matrix] = fram_data[:matrix] # 16 float (row-major)
+  result[:rotate_pivot_translate] = fram_data[:rotate_pivot_translate]
+  result[:rotate_pivot] = fram_data[:rotate_pivot]
+  result[:scale_pivot_translate] = fram_data[:scale_pivot_translate]
+  result[:scale_pivot] = fram_data[:scale_pivot]
+  result[:shear] = fram_data[:shear]
+
+  anim = animation_build_tracks_by_axis(fram_data[:anim] || {})
+  result[:with_animation] = !anim.empty?
+  result[:animations] = anim
+
+  result
+end
+
+def create_joint(fram_data, parent_node_name:, node_name: 'transformNode')
+  result = {}
+  result[:node_name] = node_name
+  result[:parent_node_name] = parent_node_name
+  result[:translation] = fram_data[:translation]
+  result[:scaling]     = fram_data[:scaling]
+  result[:rotation] = fram_data[:rotation].map { |r| r * RAD2DEG }
+
+  result[:node_type] = 'joint'
+  result[:matrix]          = fram_data[:matrix]          # 16 float (row-major)
+  result[:rotation_matrix] = fram_data[:rotation_matrix] # 16 float (row-major)
+
+  result[:min_rot_limit]   = fram_data[:min_rot_limit]   # [rx, ry, rz] (rad)
+  result[:max_rot_limit]   = fram_data[:max_rot_limit]   # [rx, ry, rz] (rad)
+
+  m3 = extract_3x3(result[:rotation_matrix])
+  result[:joint_orient] = matrix_rowmajor_to_euler_xyz_standard(m3)
+
+  anim = animation_build_tracks_by_axis(fram_data[:anim] || {})
+  result[:with_animation] = !anim.empty?
+  result[:animations] = anim
+
+  result
+end
+
+def create_locator(_, node_name:, parent_node_name:)
+  result = { node_type: 'locator' }
+  result[:node_name] = node_name
+  result[:parent_node_name] = parent_node_name
+  result
+end
+
+def create_mesh(mesh_data, node_name:, parent_node_name:)
+  result = { node_type: 'mesh' }
+  result[:node_name] = node_name
+  result[:parent_node_name] = parent_node_name
+
+  result[:vrts] = mesh_data[:vbuf].map { |t| [t[0], t[1], t[2]] }
+  ibuf = mesh_data[:ibuf].map { |tri| [tri[0], tri[1], tri[2]] }
+  ibuf = if MeshGeom.mesh_right_handed?(ibuf, mesh_data)
+           mesh_data[:ibuf].map { |tri| [tri[0], tri[2], tri[1]] }
+         else
+           mesh_data[:ibuf].map { |tri| [tri[0], tri[1], tri[2]] }
+         end
+  result[:ibuf] = ibuf
+
+  edge, face = build_edges_and_faces_signed(ibuf)
+  result[:edge] = edge
+  result[:face] = face
+  result[:edge].map! { |e| e.length == 2 ? e + [0] : e }
+
+  result[:materials] = mesh_data[:materials]
+
+  result[:uvpt] = mesh_data[:vbuf].map do |t|
+    u = (t[6] || 0.0).to_f
+    v = (t[7] || 0.0).to_f
+    [u, v]
+  end
+
+  result[:uv_index_of_vertex] = (0...result[:vrts].length).to_a
+
+  result[:materials] = mesh_data[:materials].map do |m|
+    mat_name = m[:name]
+    mat_name = 'lambert' if mat_name == '' || mat_name.empty?
+    mat_name = "#{mat_name}_#{result[:node_name]}"
+    a = m[:alpha].to_f
+
+    tex_path = m.dig(:texture, :name)
+    tex_path = tex_path&.tr('\\', '/') # Maya отлично ест forward-slash
+    {
+      mat_name:,
+      sg_name: "#{mat_name}SG",
+      r: m[:red].to_f,
+      g: m[:green].to_f,
+      b: m[:blue].to_f,
+      a:,
+      t: a,
+      repeatU: m[:horizontal_stretch].to_i,
+      repeatV: m[:vertical_stretch].to_i,
+      mirrorU: m[:uv_mapping_flip_horizontal].to_i,
+      mirrorV: m[:uv_mapping_flip_vertical].to_i,
+      rotateUV: m[:rotate].to_i,
+      tex_path: tex_path,
+      has_tex: !tex_path.nil? && !tex_path.empty?,
+      place2d_name: "#{mat_name}_place2d",
+      file_name: "#{mat_name}_file"
+    }
+  end
+
+  result
+end
+
+# OUTPUT FUNCTION
 def fmt_f(x)
   format('%.9f', x.to_f).sub(/\.?0+$/, '')
 end
@@ -346,15 +326,15 @@ def model_to_maya(nodes)
       str << header
 
       str << "\n\tsetAttr \".translate\" -type \"double3\" #{node[:translation].join(' ')};"
-      str << "\n\tsetAttr \".rotate\" -type \"double3\" #{node[:rot_deg].join(' ')};"
+      str << "\n\tsetAttr \".rotate\" -type \"double3\" #{node[:rotation].join(' ')};"
       str << "\n\tsetAttr \".scale\" -type \"double3\" #{node[:scaling].join(' ')};"
-      str << "\n\tsetAttr \".rotatePivotTranslate\" -type \"double3\" #{node[:rpv_t].join(' ')};"
-      str << "\n\tsetAttr \".rotatePivot\" -type \"double3\" #{node[:rpv].join(' ')};"
-      str << "\n\tsetAttr \".scalePivotTranslate\" -type \"double3\" #{node[:spv_t].join(' ')};"
-      str << "\n\tsetAttr \".scalePivot\" -type \"double3\" #{node[:spv].join(' ')};"
+      str << "\n\tsetAttr \".rotatePivotTranslate\" -type \"double3\" #{node[:rotate_pivot_translate].join(' ')};"
+      str << "\n\tsetAttr \".rotatePivot\" -type \"double3\" #{node[:rotate_pivot].join(' ')};"
+      str << "\n\tsetAttr \".scalePivotTranslate\" -type \"double3\" #{node[:scale_pivot_translate].join(' ')};"
+      str << "\n\tsetAttr \".scalePivot\" -type \"double3\" #{node[:scale_pivot].join(' ')};"
       str << "\n\tsetAttr \".shear\" -type \"double3\" #{node[:shear].join(' ')};"
     end
-    if node[:node_type] == 'join'
+    if node[:node_type] == 'joint'
       str += "\n"
       header =
         if node[:parent_node_name]
@@ -365,7 +345,7 @@ def model_to_maya(nodes)
       str << header
 
       str << "\n\tsetAttr \".translate\" -type \"double3\" #{node[:translation].join(' ')};"
-      str << "\n\tsetAttr \".rotate\" -type \"double3\" #{node[:rot_deg].join(' ')};"
+      str << "\n\tsetAttr \".rotate\" -type \"double3\" #{node[:rotation].join(' ')};"
       str << "\n\tsetAttr \".scale\" -type \"double3\" #{node[:scaling].join(' ')};"
 
       str << "\n\tsetAttr \".jointOrient\" -type \"double3\" #{node[:joint_orient].map { |d| ('%.6f' % d) }.join(' ')};"
@@ -483,7 +463,7 @@ end
 
 input_path, output_path = ARGV
 nodes = JSON.parse(File.read(input_path), symbolize_names: true)
-scene = model_to_maya(NmfJsonToMaya.create(nodes))
+scene = model_to_maya(convert_nodes(nodes))
 
 File.open(output_path, 'w:utf-8') do |io|
   io << scene
