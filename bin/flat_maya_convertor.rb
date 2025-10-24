@@ -385,7 +385,7 @@ def model_to_maya(nodes)
     end
     next unless node[:node_type] == 'mesh'
 
-    line = node[:parent_node_name] ? "createNode mesh -name \"#{node[:node_name]}\" -parent \"#{node[:parent_node_name]}\";" : "createNode transform -name \"#{node[:node_name]}\";"
+    line = node[:parent_node_name] ? "createNode mesh -name \"#{node[:node_name]}\" -parent \"#{node[:parent_node_name]}\";" : "createNode mesh -name \"#{node[:node_name]}\";"
     str += "\n"
     str += line
     str += "\n\tsetAttr -keyable off \".visibility\";"
