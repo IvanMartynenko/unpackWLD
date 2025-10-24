@@ -252,6 +252,7 @@ class Nmf:
 
         name = read_aligned_string(f)
 
+        res["name"] = name
         res["blend_mode"] = struct.unpack("<i", f.read(4))[0]
         res["unknown_ints"] = list(struct.unpack("<4i", f.read(16)))
         res["uv_mapping_flip_horizontal"] = struct.unpack("<i", f.read(4))[0]
