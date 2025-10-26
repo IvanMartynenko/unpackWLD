@@ -285,8 +285,8 @@ class NMFWriter:
             # vdict = (item.get(key) or {}).get('values') or {}
 
             keys_arr = kvdict.get('keys')
-            # if keys_arr is None:
-            #     continue
+            if keys_arr is None:
+                continue
             vals_arr = kvdict.get('values') or []
             self._i_push_floats(inner, keys_arr)
             self._i_push_floats(inner, vals_arr)

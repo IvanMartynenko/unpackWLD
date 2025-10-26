@@ -52,17 +52,19 @@ def apply_normalizer(model: Dict[str, Any], verbose: bool = True) -> Dict[str, A
         return model
 
     normalizer = AnimationNormalizer()
-    for attr in ("normalize", "process", "run", "__call__"):
-        func = getattr(normalizer, attr, None)
-        if callable(func):
-            if verbose:
-                print(f"Info: Applying AnimationNormalizer via '{attr}'...", file=sys.stderr)
-            result = func(model)  # type: ignore
-            return result
+    result = normalizer.normalize(model)
+    return result
+    # for attr in ("normalize", "process", "run", "__call__"):
+    #     func = getattr(normalizer, attr, None)
+    #     if callable(func):
+    #         if verbose:
+    #             print(f"Info: Applying AnimationNormalizer via '{attr}'...", file=sys.stderr)
+    #         result = func(model)  # type: ignore
+    #         return result
 
-    if verbose:
-        print("Warn: AnimationNormalizer has no known callable (normalize/process/run). Skipping.", file=sys.stderr)
-    return model
+    # if verbose:
+    #     print("Warn: AnimationNormalizer has no known callable (normalize/process/run). Skipping.", file=sys.stderr)
+    # return model
 
 def apply_pivot_baker(
     model: Dict[str, Any],
@@ -202,22 +204,22 @@ def main() -> None:
         write_json(out_path, model)
 
     elif mode == "repack":
-        try:
-            model = Nmf().unpack(str(in_path))
-        except Exception as e:
-            print(f"Error during NMF unpack: {e}", file=sys.stderr)
-            sys.exit(1)
+        # try:
+        model = Nmf().unpack(str(in_path))
+        # except Exception as e:
+        #     print(f"Error during NMF unpack: {e}", file=sys.stderr)
+        #     sys.exit(1)
         if args.normalize:
             model = apply_normalizer(model)
         if args.bake_pivots:
            model = apply_pivot_baker(model, rotation_order=args.rot_order, inplace=args.bake_inplace)
-        try:
-            blob = NMFWriter().pack(model)
-            if not isinstance(blob, (bytes, bytearray)):
-                raise TypeError("NMFWriter.pack() must return bytes/bytearray.")
-        except Exception as e:
-            print(f"Error during NMF repack: {e}", file=sys.stderr)
-            sys.exit(1)
+        # try:
+        blob = NMFWriter().pack(model)
+            # if not isinstance(blob, (bytes, bytearray)):
+            #     raise TypeError("NMFWriter.pack() must return bytes/bytearray.")
+        # except Exception as e:
+            # print(f"Error during NMF repack: {e}", file=sys.stderr)
+            # sys.exit(1)
         write_nmf(out_path, bytes(blob))
 
     elif mode == "pack":

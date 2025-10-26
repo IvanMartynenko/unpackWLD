@@ -85,82 +85,83 @@ class AnimationNormalizer:
     def _flat_series(val: float, grid: np.ndarray):
         return {"keys": grid.tolist(), "values": np.full(grid.shape, float(val), dtype=float).tolist()}
 
-def _normalize_one(
-    self,
-    curves: Dict[str, Any],
-    rest_translation: List[float],
-    rest_scaling: Optional[List[float]],
-    rest_rotation: Optional[List[float]],
-) -> Dict[str, Any]:
-    """Возвращает новые нормализованные кривые (dict), рассчитанные на общей сетке времени.
-    Если для конкретного ttype (translation/scaling/rotation) x/y/z пустые — оставляем как есть.
-    """
-    # rest-значения
-    rt = {"x": float(rest_translation[0]), "y": float(rest_translation[1]), "z": float(rest_translation[2])}
-    rs = {"x": 1.0, "y": 1.0, "z": 1.0} if rest_scaling is None else {
-        "x": float(rest_scaling[0]), "y": float(rest_scaling[1]), "z": float(rest_scaling[2])
-    }
-    rr = {"x": 0.0, "y": 0.0, "z": 0.0} if rest_rotation is None else {
-        "x": float(rest_rotation[0]), "y": float(rest_rotation[1]), "z": float(rest_rotation[2])
-    }
+    def _normalize_one(
+        self,
+        curves: Dict[str, Any],
+        rest_translation: List[float],
+        rest_scaling: Optional[List[float]],
+        rest_rotation: Optional[List[float]],
+    ) -> Dict[str, Any]:
+        """Возвращает новые нормализованные кривые (dict), рассчитанные на общей сетке времени.
+        Если для конкретного ttype (translation/scaling/rotation) x/y/z пустые — оставляем как есть.
+        """
+        # rest-значения
+        rt = {"x": float(rest_translation[0]), "y": float(rest_translation[1]), "z": float(rest_translation[2])}
+        rs = {"x": 1.0, "y": 1.0, "z": 1.0} if rest_scaling is None else {
+            "x": float(rest_scaling[0]), "y": float(rest_scaling[1]), "z": float(rest_scaling[2])
+        }
+        rr = {"x": 0.0, "y": 0.0, "z": 0.0} if rest_rotation is None else {
+            "x": float(rest_rotation[0]), "y": float(rest_rotation[1]), "z": float(rest_rotation[2])
+        }
 
-    def _has_any_keys(axes_dict: Dict[str, Any]) -> bool:
-        if not isinstance(axes_dict, dict):
+        def _has_any_keys(axes_dict: Dict[str, Any]) -> bool:
+            if not isinstance(axes_dict, dict):
+                return False
+            for ax in ("x", "y", "z"):
+                axis = axes_dict.get(ax, {})
+                keys = axis.get("keys", [])
+                if isinstance(keys, (list, tuple)) and len(keys) > 0:
+                    return True
             return False
-        for ax in ("x", "y", "z"):
-            axis = axes_dict.get(ax, {})
-            keys = axis.get("keys", [])
-            if isinstance(keys, (list, tuple)) and len(keys) > 0:
-                return True
-        return False
 
-    curves = curves if isinstance(curves, dict) else {}
-    all_times = self._collect_all_times(curves)
+        curves = curves if isinstance(curves, dict) else {}
+        all_times = self._collect_all_times(curves)
 
-    # Если ключей вообще нигде нет — ничего не делаем
-    if all_times.size == 0:
-        return curves
+        # Если ключей вообще нигде нет — ничего не делаем
+        if all_times.size == 0:
+            return curves
 
-    t_min, t_max = float(all_times.min()), float(all_times.max())
-    grid = self._make_time_grid(t_min, t_max)
+        t_min, t_max = float(all_times.min()), float(all_times.max())
+        grid = self._make_time_grid(t_min, t_max)
 
-    normalized: Dict[str, Any] = {}
-    for ttype in ("translation", "scaling", "rotation"):
-        axes_in = curves.get(ttype, {}) if isinstance(curves, dict) else {}
+        normalized: Dict[str, Any] = {}
+        for ttype in ("translation", "scaling", "rotation"):
+            axes_in = curves.get(ttype, {}) if isinstance(curves, dict) else {}
 
-        # >>> ВАЖНО: если у данного ttype нет ключей ни по одной оси — оставляем как есть
-        if not _has_any_keys(axes_in):
-            # Ничего не трогаем — ни добавления осей, ни плоских серий
-            if axes_in:  # если раздел существовал — копируем как есть
-                normalized[ttype] = axes_in
-            # если раздела даже не было, тоже ничего не добавляем
-            continue
+            # >>> ВАЖНО: если у данного ttype нет ключей ни по одной оси — оставляем как есть
+            # if not _has_any_keys(axes_in):
+                # Ничего не трогаем — ни добавления осей, ни плоских серий
+                # if axes_in:  # если раздел существовал — копируем как есть
+                    # normalized[ttype] = axes_in
+                # если раздела даже не было, тоже ничего не добавляем
+                # continue
 
-        # Иначе нормализуем этот ttype на общей сетке
-        normalized[ttype] = {}
-        for axis_name in ("x", "y", "z"):
-            axis = axes_in.get(axis_name, {}) if isinstance(axes_in, dict) else {}
-            keys, vals = self._sorted_unique_pairs(axis.get("keys", []), axis.get("values", []))
+            # Иначе нормализуем этот ttype на общей сетке
+            normalized[ttype] = {}
+            for axis_name in ("x", "y", "z"):
+                axis = axes_in.get(axis_name, {}) if isinstance(axes_in, dict) else {}
+                keys, vals = self._sorted_unique_pairs(axis.get("keys", []), axis.get("values", []))
 
-            if vals.size < 1:
-                base = rt if ttype == "translation" else (rs if ttype == "scaling" else rr)
-                normalized[ttype][axis_name] = self._flat_series(base[axis_name], grid)
-            elif vals.size == 1:
-                normalized[ttype][axis_name] = self._flat_series(vals[0], grid)
-            else:
-                interp = np.interp(grid, keys, vals, left=vals[0], right=vals[-1])
-                normalized[ttype][axis_name] = {
-                    "keys": grid.tolist(),
-                    "values": interp.astype(float).tolist()
-                }
+                if vals.size < 1:
+                    base = rt if ttype == "translation" else (rs if ttype == "scaling" else rr)
+                    normalized[ttype][axis_name] = self._flat_series(base[axis_name], grid)
+                elif vals.size == 1:
+                    normalized[ttype][axis_name] = self._flat_series(vals[0], grid)
+                else:
+                    interp = np.interp(grid, keys, vals, left=vals[0], right=vals[-1])
+                    normalized[ttype][axis_name] = {
+                        "keys": grid.tolist(),
+                        "values": interp.astype(float).tolist()
+                    }
 
-        # Добавляем недостающие оси только для активного ttype (у которого были ключи)
-        base = rt if ttype == "translation" else (rs if ttype == "scaling" else rr)
-        for ax in ("x", "y", "z"):
-            if ax not in normalized[ttype]:
-                normalized[ttype][ax] = self._flat_series(base[ax], grid)
+            # Добавляем недостающие оси только для активного ttype (у которого были ключи)
+            base = rt if ttype == "translation" else (rs if ttype == "scaling" else rr)
+            # print(normalized)
+            for ax in ("x", "y", "z"):
+                if ax not in normalized[ttype]:
+                    normalized[ttype][ax] = self._flat_series(base[ax], grid)
 
-    return normalized
+        return normalized
 
 
     # ---------- публичный батч ----------
