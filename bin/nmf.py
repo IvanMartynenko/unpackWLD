@@ -39,9 +39,9 @@ except Exception:
 
 try:
     # expects: PivotBaker(model, rotation_order="XYZ").bake(inplace=False) -> dict or mutates model
-    from pivot_baker import PivotBaker  # from ../python_lib/3d/
+    from pivot_baker import bake_pivots_in_array  # from ../python_lib/3d/
 except Exception:
-    PivotBaker = None  # type: ignore
+    bake_pivots_in_array = None  # type: ignore
 
 # === helper functions ===
 def apply_normalizer(model: Dict[str, Any], verbose: bool = True) -> Dict[str, Any]:
@@ -73,16 +73,16 @@ def apply_pivot_baker(
     verbose: bool = True,
 ) -> Dict[str, Any]:
     """
-    Run PivotBaker if available.
-    Usage equivalent: PivotBaker(model, rotation_order=...).bake(inplace=...)
+    Run bake_pivots_in_array if available.
+    Usage equivalent: bake_pivots_in_array(model, rotation_order=...).bake(inplace=...)
     """
-    if PivotBaker is None:
+    if bake_pivots_in_array is None:
         if verbose:
-            print("Warn: PivotBaker not found; skipping pivot baking.", file=sys.stderr)
+            print("Warn: bake_pivots_in_array not found; skipping pivot baking.", file=sys.stderr)
         return model
     if verbose:
         print(f"Info: Baking pivots (rotation_order={rotation_order}, inplace={inplace})...", file=sys.stderr)
-    baked = PivotBaker(model, rotation_order=rotation_order).bake(inplace=inplace)
+    baked = bake_pivots_in_array(model)
     return baked if not inplace else model
 
 
@@ -159,18 +159,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--bake-pivots",
         action="store_true",
-        help="Apply PivotBaker from ../python_lib/3d/ (if available)."
-    )
-    p.add_argument(
-        "--rot-order",
-        default="XYZ",
-        choices=["XYZ","XZY","YXZ","YZX","ZXY","ZYX"],
-        help="Rotation order to use with PivotBaker (default: XYZ)."
-    )
-    p.add_argument(
-        "--bake-inplace",
-        action="store_true",
-        help="Run PivotBaker with inplace=True (mutates the model). Default is False."
+        help="Apply bake_pivots_in_array from ../python_lib/3d/ (if available)."
     )
     return p.parse_args()
 
@@ -197,7 +186,7 @@ def main() -> None:
         if args.normalize:
             model = apply_normalizer(model)
         if args.bake_pivots:
-           model = apply_pivot_baker(model, rotation_order=args.rot_order, inplace=args.bake_inplace)
+           model = apply_pivot_baker(model)
         if args.pretty:
             print(json.dumps(model, ensure_ascii=False, indent=2))
             return
@@ -212,7 +201,7 @@ def main() -> None:
         if args.normalize:
             model = apply_normalizer(model)
         if args.bake_pivots:
-           model = apply_pivot_baker(model, rotation_order=args.rot_order, inplace=args.bake_inplace)
+           model = apply_pivot_baker(model)
         # try:
         blob = NMFWriter().pack(model)
             # if not isinstance(blob, (bytes, bytearray)):
@@ -227,7 +216,7 @@ def main() -> None:
         if args.normalize:
             model = apply_normalizer(model)
         if args.bake_pivots:
-           model = apply_pivot_baker(model, rotation_order=args.rot_order, inplace=args.bake_inplace)
+           model = apply_pivot_baker(model)
         try:
             blob = NMFWriter().pack(model)
             if not isinstance(blob, (bytes, bytearray)):
