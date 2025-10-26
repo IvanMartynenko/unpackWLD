@@ -1,8 +1,114 @@
 import struct
 import sys
 from pprint import pprint
+import json
+import numpy as np
 
 MATRIX_SIZE = 16
+
+class AnimationNormalizer:
+    """
+    Нормализует разрозненные ключи анимации на общую сетку времени с шагом 1/fps.
+    Если по оси нет ключей или их < 2 — используется rest-значение (или единственный ключ).
+    """
+
+    def __init__(self, fps=24.0, translation=None, scaling=None, rotation=None):
+        self.fps = float(fps)
+        self.rest_translation = {"x": 0.0, "y": 0.0, "z": 0.0} if translation is None else {
+            "x": float(translation[0]), "y": float(translation[1]), "z": float(translation[2])
+        }
+        self.rest_scaling = {"x": 1.0, "y": 1.0, "z": 1.0} if scaling is None else {
+            "x": float(scaling[0]), "y": float(scaling[1]), "z": float(scaling[2])
+        }
+        # эйлеры по умолчанию (0,0,0)
+        self.rest_rotation = {"x": 0.0, "y": 0.0, "z": 0.0} if rotation is None else {
+            "x": float(rotation[0]), "y": float(rotation[1]), "z": float(rotation[2])
+        }
+
+    # ---------- helpers ----------
+    def _collect_all_times(self, curves):
+        times = []
+        for ttype in curves.values():
+            for axis in ttype.values():
+                k = axis.get("keys")
+                if k:
+                    times.extend(k)
+        return np.unique(np.asarray(times, dtype=float)) if times else np.array([], dtype=float)
+
+    def _make_time_grid(self, tmin, tmax):
+        if self.fps <= 0:
+            raise ValueError("fps must be > 0")
+        if tmax < tmin:
+            tmin, tmax = tmax, tmin
+        step = 1.0 / self.fps
+        if np.isclose(tmax, tmin):
+            return np.array([tmin], dtype=float)
+        n = int(np.ceil((tmax - tmin) / step)) + 1
+        grid = tmin + np.arange(n, dtype=float) * step
+        if grid[-1] + 1e-9 < tmax:
+            grid = np.append(grid, grid[-1] + step)
+        return grid
+
+    def _sorted_unique_pairs(self, keys, values):
+        if not keys or not values:
+            return np.array([], dtype=float), np.array([], dtype=float)
+        k = np.asarray(keys, dtype=float)
+        v = np.asarray(values, dtype=float)
+        idx = np.argsort(k, kind="stable")
+        k, v = k[idx], v[idx]
+        uniq_k, inv = np.unique(k, return_inverse=True)
+        out_v = np.zeros_like(uniq_k, dtype=float)
+        for i in range(len(k)):
+            out_v[inv[i]] = v[i]  # берём последнее значение для дубликатов
+        return uniq_k, out_v
+
+    def _flat_series(self, val, grid):
+        return {"keys": grid.tolist(), "values": np.full(grid.shape, float(val), dtype=float).tolist()}
+
+    # ---------- public ----------
+    def normalize(self, curves):
+        all_times = self._collect_all_times(curves)
+        if all_times.size == 0:
+            return curves
+
+        t_min, t_max = float(all_times.min()), float(all_times.max())
+        grid = self._make_time_grid(t_min, t_max)
+
+        normalized = {}
+        for ttype, axes in curves.items():
+            normalized[ttype] = {}
+            for axis_name in ("x", "y", "z"):
+                axis = axes.get(axis_name, {})
+                keys, vals = self._sorted_unique_pairs(axis.get("keys", []), axis.get("values", []))
+
+                if vals.size < 1:
+                    if ttype == "translation":
+                        normalized[ttype][axis_name] = self._flat_series(self.rest_translation[axis_name], grid)
+                    elif ttype == "scaling":
+                        normalized[ttype][axis_name] = self._flat_series(self.rest_scaling[axis_name], grid)
+                    else:  # rotation
+                        normalized[ttype][axis_name] = self._flat_series(self.rest_rotation[axis_name], grid)
+                    continue
+
+                if vals.size == 1:
+                    normalized[ttype][axis_name] = self._flat_series(vals[0], grid)
+                    continue
+
+                interp = np.interp(grid, keys, vals, left=vals[0], right=vals[-1])
+                normalized[ttype][axis_name] = {"keys": grid.tolist(), "values": interp.astype(float).tolist()}
+
+            # добиваем отсутствующие оси дефолтами
+            if ttype == "translation":
+                rest = self.rest_translation
+            elif ttype == "scaling":
+                rest = self.rest_scaling
+            else:
+                rest = self.rest_rotation
+            for ax in ("x", "y", "z"):
+                if ax not in normalized[ttype]:
+                    normalized[ttype][ax] = self._flat_series(rest[ax], grid)
+
+        return normalized
 
 def read_aligned_string(f):
     # читаем байты по одному, пока не встретим \x00
@@ -110,7 +216,7 @@ class Nmf:
             return res
         word = peek.decode("ascii", errors="ignore")
         if word == "ANIM":
-            res["anim"] = self._parse_anim(f)
+            res["anim"] = self._parse_anim(f, res["translation"],res["rotation"], res["scaling"])
         return res
 
     def _parse_join(self, f):
@@ -136,17 +242,17 @@ class Nmf:
             return res
         word = peek.decode("ascii", errors="ignore")
         if word == "ANIM":
-            res["anim"] = self._parse_anim(f)
+            res["anim"] = self._parse_anim(f, res["translation"],res["rotation"],  res["scaling"])
         else:
             # ничего не делаем
             pass
         return res
 
-    def _parse_anim(self, f):
+    def _parse_anim(self, f, translation,rotation, scaling):
         res = {}
         sizes = {}
 
-        res["unknown"] = struct.unpack("<i", f.read(4))[0]
+        unknow = struct.unpack("<i", f.read(4))[0]
 
         keys = ["translation", "rotation", "scaling"]
         for key in keys:
@@ -160,29 +266,33 @@ class Nmf:
         # значения/ключи кривых
         for key in keys:
             axis_sizes = sizes[key]["sizes"]
-            cur = {"values": {}, "keys": {}}
+            cur = {"x": {}, "y": {}, "z": {}}
 
             # x
             n = axis_sizes[0]
             if n > 0:
-                cur["keys"]["x"] = list(struct.unpack(f"<{n}f", f.read(4 * n)))
-                cur["values"]["x"] = list(struct.unpack(f"<{n}f", f.read(4 * n)))
+                cur["x"]["keys"] = list(struct.unpack(f"<{n}f", f.read(4 * n)))
+                cur["x"]["values"] = list(struct.unpack(f"<{n}f", f.read(4 * n)))
 
             # y
             n = axis_sizes[1]
             if n > 0:
-                cur["keys"]["y"] = list(struct.unpack(f"<{n}f", f.read(4 * n)))
-                cur["values"]["y"] = list(struct.unpack(f"<{n}f", f.read(4 * n)))
+                cur["y"]["keys"] = list(struct.unpack(f"<{n}f", f.read(4 * n)))
+                cur["y"]["values"] = list(struct.unpack(f"<{n}f", f.read(4 * n)))
 
             # z
             n = axis_sizes[2]
             if n > 0:
-                cur["keys"]["z"] = list(struct.unpack(f"<{n}f", f.read(4 * n)))
-                cur["values"]["z"] = list(struct.unpack(f"<{n}f", f.read(4 * n)))
+                cur["z"]["keys"] = list(struct.unpack(f"<{n}f", f.read(4 * n)))
+                cur["z"]["values"] = list(struct.unpack(f"<{n}f", f.read(4 * n)))
 
             res[key] = cur
 
-        return res
+        normalizer = AnimationNormalizer(fps=24, translation=translation, scaling=scaling, rotation=rotation)
+        normalized = normalizer.normalize(res)
+
+        normalized["unknown"] = unknow
+        return normalized
 
     def _parse_mesh(self, f):
         res = {}
@@ -347,8 +457,7 @@ def main():
     try:
         parser = Nmf()
         result = parser.unpack(path)
-        print("Parsed NMF structure successfully:")
-        pprint(result, width=120)
+        print(json.dumps(result, indent=4, ensure_ascii=False))
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
