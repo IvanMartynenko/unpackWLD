@@ -15,7 +15,7 @@ class NmfJsonToMaya
 
       parent_node = nodes.find { |t| t[:index] == node[:parent_iid] }
       parent_name = parent_node ? parent_node[:name] : nil
-      parent_name = nil if node[:parent_iid] == 1
+      # parent_name = nil if node[:parent_iid] == 1
 
       case node[:word]
       when 'ROOT'
@@ -284,7 +284,7 @@ module MeshGeom
 
   # public
   def mesh_right_handed?(ibuf, mesh_data)
-    vbuf = mesh_data[:vbuf]
+    vbuf = mesh_data[:vbuf].map { |t| t.map { |a| a.to_f } }
 
     pos  = vbuf.map { |r| pos_of(r) }
     nrm  = vbuf.map { |r| nrm_of(r) }
@@ -314,12 +314,12 @@ class MayaMeshObject < MayaBaseObject
     @node_name = node_name
     @parent_node_name = parent_node_name
 
-    @vrts = mesh_data[:vbuf].map { |t| [t[0], t[1], t[2]] }
-    @ibuf = mesh_data[:ibuf].map { |tri| [tri[0], tri[1], tri[2]] }
+    @vrts = mesh_data[:vbuf].map { |t| [t[0].to_f, t[1].to_f, t[2].to_f] }
+    @ibuf = mesh_data[:ibuf].map { |tri| [tri[0].to_f, tri[1].to_f, tri[2].to_f] }
     @ibuf = if MeshGeom.mesh_right_handed?(@ibuf, mesh_data)
-              mesh_data[:ibuf].map { |tri| [tri[0], tri[2], tri[1]] }
+              mesh_data[:ibuf].map { |tri| [tri[0].to_f, tri[2].to_f, tri[1].to_f] }
             else
-              mesh_data[:ibuf].map { |tri| [tri[0], tri[1], tri[2]] }
+              mesh_data[:ibuf].map { |tri| [tri[0].to_f, tri[1].to_f, tri[2].to_f] }
             end
 
     @edge, @face = build_edges_and_faces_signed(@ibuf)
@@ -424,7 +424,7 @@ class MayaMeshObject < MayaBaseObject
       f_part = "f 3 #{edges_triplet.join(' ')}"
       tri = @ibuf[i]
       uv_idx = tri.map { |v| @uv_index_of_vertex[v] }
-      mf_part = "mf 3 #{uv_idx.join(' ')}"
+      mf_part = "\n\t\tmu 3 #{uv_idx.join(' ')}"
       face_lines << "\t\t#{f_part}   #{mf_part}"
     end
 

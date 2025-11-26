@@ -285,7 +285,7 @@ Same structure as **Model List Tree Folder**.
 
 | Field                        | Type / Size  | Description                              |
 | ---------------------------- | ------------ | ---------------------------------------- |
-| `flag`                       | `bool (int)` | Unknown flag.                            |
+| `reserved`                   | `bool (int)` | No used. 0 or 1 values                   |
 | `translation_sizes`          | `int32[3]`   | Key counts for X/Y/Z.                    |
 | `rotation_sizes`             | `int32[3]`   | Key counts for X/Y/Z.                    |
 | `scaling_sizes`              | `int32[3]`   | Key counts for X/Y/Z.                    |

@@ -214,7 +214,7 @@ module Wld
       def parse_anim
         res = {}
         sizes = {}
-        res[:unknown] = @file.int
+        res[:reserved] = @file.int
         keys = %i[translation rotation scaling]
         keys.each { |key| res[key] = {} }
         keys.each { |key| sizes[key] = {} }
@@ -327,7 +327,7 @@ module Wld
       def pack_anim(item)
         accumulator = BinaryDataBuffer.new
         accumulator.push_word 'ANIM'
-        accumulator.push_int item[:unknown]
+        accumulator.push_int item[:reserved]
 
         keys = %i[translation rotation scaling]
 
