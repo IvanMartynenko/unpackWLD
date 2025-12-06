@@ -391,22 +391,22 @@ Same structure as **Model List Tree Folder**.
 | `type`            | `int32`             | Object type id.                                            |
 | `name`            | `char[]`            | Object name. Null‑terminated (aligned).                    |
 | `parent_id`       | `int32`             | Parent folder id from Object Tree Folders (2‑based index). |
-| `animation_count` | `int32`             | Count of `ObjectAnimation`.                                |
-| `animations`      | `ObjectAnimation[]` | Animation array.                                           |
+| `3d models count` | `int32`             | Count of `3dObjects`.                                |
+| `3d models `      | `3dObjects[]` | 3d objects array array.                                           |
 | `INFO`            | `INFO`              | Info block (see below).                                    |
 
-#### ObjectAnimation
+#### 3dObjects
 
 | Field                     | Type / Size                | Description                                |
 | ------------------------- | -------------------------- | ------------------------------------------ |
-| `name`                    | `char[]`                   | Animation name. Null‑terminated (aligned). |
+| `name`                    | `char[]`                   | Name. Null‑terminated (aligned). |
 | `3d model id`                | `int32`           | Id of 3d model                  |
 | `unknown2`                | `float`                    | Possibly duration or time offset.          |
 | `unknown3`                | `int32 or float`           | Possibly animation type / loop flag.       |
 | `unknown4`                | `int32`                    | Possibly time scale.                       |
 | `unknown5`                | `float`                    | Often `-100.0` (sentinel).                 |
-| `unknown6`                | `bool (int32)`             | Flag (e.g., has position keys).            |
-| `unknown7`                | `bool (int32)`             | Flag (e.g., has rotation keys).            |
+| `animation`                | `bool (int32)`             | 0 if loop animation. -1 if one shot animation            |
+| `default action`                | `bool (int32)`             | default action          |
 | `unknown_animation_count` | `int32`                    | Count of `UnknownObjectAnimation`.         |
 | `sub`                     | `UnknownObjectAnimation[]` | Sub‑animations (e.g., per‑bone).           |
 
