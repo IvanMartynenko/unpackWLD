@@ -400,7 +400,7 @@ Same structure as **Model List Tree Folder**.
 | Field                     | Type / Size                | Description                                |
 | ------------------------- | -------------------------- | ------------------------------------------ |
 | `name`                    | `char[]`                   | Animation name. Null‑terminated (aligned). |
-| `unknown1`                | `int32 or float`           | Possibly animation speed.                  |
+| `3d model id`                | `int32`           | Id of 3d model                  |
 | `unknown2`                | `float`                    | Possibly duration or time offset.          |
 | `unknown3`                | `int32 or float`           | Possibly animation type / loop flag.       |
 | `unknown4`                | `int32`                    | Possibly time scale.                       |
