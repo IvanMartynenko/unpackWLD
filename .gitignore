@@ -1,9 +1,1 @@
-output/
-VaBank.wld
-ModVaBank.wld
-VaBank_unpack/
-ModVaBank_unpack/
-3d_files/
-*.c
-*.dat
-a.out
+**__pycache__**
