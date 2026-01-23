@@ -869,10 +869,6 @@ The plugin requires **Ultimate ASI Loader** to function.
 
 The `config.ini` file allows you to control the plugin's behavior. Open it with any text editor to change the parameters.
 
----
-
-**Would you like me to also draft a template for the `config.ini` file based on this description?**
-
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
