@@ -1,0 +1,10 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="VaBankDLL/VaBankDLL.vcxproj" Id="c14790bc-ee14-44c0-b578-3b415b30bc16">
+    <BuildType Solution="Debug|x64" Project="Release" />
+    <Platform Solution="Debug|x64" Project="Win32" />
+  </Project>
+</Solution>

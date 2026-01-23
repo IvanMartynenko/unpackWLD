@@ -834,6 +834,49 @@ Same structure as **Model List Tree Folder**.
 
 ---
 
+Here is the English translation of the README file.
+
+---
+
+# VaBankAsi
+
+**VaBankAsi** is an ASI plugin (modification) for the game *Va-Bank* (The Sting!), written in C++. The project's main goal is to extend the game's functionality, remove limits on the number of missions, and provide dynamic replacement of game resources.
+
+## Features
+
+* **Mission List Expansion:** Patches the game's EXE in memory to support a larger number of missions than originally provided.
+* **Mission Image Loading:** Automatically loads images for new missions from an external folder.
+* **Resource Replacement:** The ability to replace built-in game images (from the EXE) with custom files without modifying the executable file on the disk.
+* **Flexible Configuration:** Manage mod parameters via the `config.ini` file.
+
+## Folder Structure
+
+For the mod to work correctly, the following folder structure must be maintained within the game directory:
+
+* `mods\missions\` — Place images for additional missions here.
+* `mods\images\` — Add images here that are intended to replace the original game resources upon loading.
+
+## Installation
+
+The plugin requires **Ultimate ASI Loader** to function.
+
+1. Download **Ultimate ASI Loader** (the `dsound.dll` version is recommended).
+* *You can find it on GitHub in the ThirteenAG/Ultimate-ASI-Loader repository.*
+2. Place the `dsound.dll` file in the root game folder (next to the game's `.exe` file).
+3. If you downloaded a ready-made release of the mod:
+* Copy the `VaBank.asi` and `config.ini` files into the game folder.
+
+
+4. Ensure that the `mods\missions` and `mods\images` folders exist if you plan to use their functionality.
+
+## Configuration (config.ini)
+
+The `config.ini` file allows you to control the plugin's behavior. Open it with any text editor to change the parameters.
+
+---
+
+**Would you like me to also draft a template for the `config.ini` file based on this description?**
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
