@@ -834,10 +834,6 @@ Same structure as **Model List Tree Folder**.
 
 ---
 
-Here is the English translation of the README file.
-
----
-
 # VaBankAsi
 
 **VaBankAsi** is an ASI plugin (modification) for the game *Va-Bank* (The Sting!), written in C++. The project's main goal is to extend the game's functionality, remove limits on the number of missions, and provide dynamic replacement of game resources.
