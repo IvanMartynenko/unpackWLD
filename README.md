@@ -332,21 +332,21 @@ Same structure as **Model List Tree Folder**.
 | ------------------------- | -------------------------- | ------------------------------------------ |
 | `name`                    | `char[]`                   | Name. Null‑terminated (aligned). |
 | `3d model id`                | `int32`           | Id of 3d model                  |
-| `unknown2`                | `float`                    | Possibly duration or time offset.          |
-| `unknown3`                | `int32 or float`           | Possibly animation type / loop flag.       |
-| `unknown4`                | `int32`                    | Possibly time scale.                       |
+| `animation_start`                | `float`                    |           |
+| `animation_end`                | `int32 or float`           |        |
+| `animation_speed`                | `int32`                    |                   |
 | `unknown5`                | `float`                    | Often `-100.0` (sentinel).                 |
-| `animation`                | `bool (int32)`             | 0 if loop animation. -1 if one shot animation            |
+| `loop_animation`                | `bool (int32)`             | 0 if loop animation. -1 if one shot animation            |
 | `default action`                | `bool (int32)`             | default action          |
-| `unknown_animation_count` | `int32`                    | Count of `UnknownObjectAnimation`.         |
-| `sub`                     | `UnknownObjectAnimation[]` | Sub‑animations (e.g., per‑bone).           |
+| `sounds_count` | `int32`                    | Count of `Sounds`.         |
+| `sounds`                     | `Sounds[]` | Sounds           |
 
-##### UnknownObjectAnimation
+##### Sounds
 
 | Field      | Type / Size | Description                                    |
 | ---------- | ----------- | ---------------------------------------------- |
 | `name`     | `char[]`    | Sub‑animation name. Null‑terminated (aligned). |
-| `unknown1` | `float`     | Possibly blend weight.                         |
+| `trigger_time` | `float`     | The animation time to start play sound     |
 
 ---
 

@@ -503,9 +503,9 @@ def unpack_objects(reader):
             model = {
                 "name": reader.read_string(),
                 "model_3d_id": reader.read_int(),
-                "unknown2": reader.read_float(),
-                "unknown3": reader.read_float(),
-                "unknown4": reader.read_int(),
+                "animation_start": reader.read_float(),
+                "animation_end": reader.read_float(),
+                "animation_speed": reader.read_int(),
                 "alway_negative100": reader.read_float(),
                 "loop_animation": reader.read_bool(),
                 "default_action": reader.read_bool(),
@@ -514,9 +514,9 @@ def unpack_objects(reader):
             uk7 = []
             for _ in range(uk7_count):
                 uk7.append(
-                    {"name": reader.read_string(), "unknown1": reader.read_float()}
+                    {"name": reader.read_string(), "trigger_time": reader.read_float()}
                 )
-            model["animations"] = uk7
+            model["sounds"] = uk7
             models.append(model)
         obj["models"] = models
 

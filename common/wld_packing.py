@@ -369,18 +369,18 @@ def pack_wld_data(data):
             for anim in anims:
                 ow.push_string(anim["name"])
                 ow.push_int(anim["model_3d_id"])
-                ow.push_float(anim["unknown2"])
-                ow.push_float(anim["unknown3"])
-                ow.push_int(anim["unknown4"])
+                ow.push_float(anim["animation_start"])
+                ow.push_float(anim["animation_end"])
+                ow.push_int(anim["animation_speed"])
                 ow.push_float(anim["alway_negative100"])
                 ow.push_bool(anim["loop_animation"])
                 ow.push_bool(anim["default_action"])
 
-                subs = anim.get("animations", anim.get("unknown7", []))
+                subs = anim.get("sounds")
                 ow.push_int(len(subs))
                 for u in subs:
                     ow.push_string(u["name"])
-                    ow.push_float(u["unknown1"])
+                    ow.push_float(u["trigger_time"])
 
             pack_info_block(ow, obj["info"])
 
