@@ -3,6 +3,8 @@
 #include <map>
 #include <iostream>
 #include <fstream> // Added for file reading
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib")
 
 
 // =============================================================
@@ -71,6 +73,7 @@ namespace ModContext {
     bool EditorMode = false;
     bool WindowedMode = false;
     bool NoCd = false;
+    bool EnableMusicHook = false;
 
     // Special Mission Configuration (with default game values)
     int SpecialMission1 = 11;
@@ -532,6 +535,72 @@ namespace Taxi {
     }
 }
 
+namespace MusicPlayer {
+    // Original function definition
+    typedef MCIERROR(WINAPI* mciSendCommandA_t)(MCIDEVICEID, UINT, DWORD_PTR, DWORD_PTR);
+    mciSendCommandA_t Original_mciSendCommandA = nullptr;
+
+    // Address found in your dump
+    uintptr_t IAT_Address = 0x005537d0;
+
+    // Fake Device ID to identify our "Virtual CD Player"
+    const MCIDEVICEID VIRTUAL_CD_ID = 0xBEEF;
+
+    MCIERROR WINAPI Hook_mciSendCommandA(MCIDEVICEID IDDevice, UINT uMsg, DWORD_PTR fdwCommand, DWORD_PTR dwParam) {
+
+        // 1. MCI_OPEN
+        if (uMsg == MCI_OPEN) {
+            LPMCI_OPEN_PARMS pOpen = (LPMCI_OPEN_PARMS)dwParam;
+            if (pOpen) pOpen->wDeviceID = VIRTUAL_CD_ID;
+            return 0;
+        }
+
+        // 2. Filter
+        if (IDDevice != VIRTUAL_CD_ID && IDDevice != 0 && IDDevice != (MCIDEVICEID)-1) {
+            return Original_mciSendCommandA(IDDevice, uMsg, fdwCommand, dwParam);
+        }
+
+        // 3. MCI_PLAY
+        if (uMsg == MCI_PLAY) {
+            LPMCI_PLAY_PARMS pPlay = (LPMCI_PLAY_PARMS)dwParam;
+
+            if (fdwCommand & MCI_FROM) {
+                int track = pPlay->dwFrom & 0xFF;
+                if (track == 0) {
+                    track = 11;
+                }
+
+                char filename[MAX_PATH];
+
+                sprintf_s(filename, "Music\\Track%02d.wav", track);
+
+                if (ModContext::EnableConsole) std::cout << "[MUSIC] Loop Track: " << track << " -> " << filename << std::endl;
+
+                if (FileLoading::FileExists(filename)) {
+                    PlaySoundA(filename, NULL, SND_ASYNC | SND_FILENAME | SND_NODEFAULT | SND_LOOP);
+                }
+                else {
+                    if (ModContext::EnableConsole) std::cout << "[MUSIC] File not found: " << filename << std::endl;
+                }
+            }
+            return 0;
+        }
+
+        // 4. MCI_STOP / MCI_CLOSE
+        if (uMsg == MCI_STOP || uMsg == MCI_CLOSE) {
+            PlaySoundA(NULL, 0, 0);
+            return 0;
+        }
+
+        return 0;
+    }
+
+    void Hook() {
+        if (IAT_Address == 0) return;
+        Mem::PatchIAT(IAT_Address, (uintptr_t)Hook_mciSendCommandA, (uintptr_t*)&Original_mciSendCommandA);
+    }
+}
+
 void OpenConsole() {
     if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
         if (!AllocConsole()) return;
@@ -558,7 +627,8 @@ void LoadConfig() {
     ModContext::EnableLog = GetPrivateProfileIntA("Settings", "EnableLog", 0, cPath);
     ModContext::EditorMode = GetPrivateProfileIntA("Settings", "EditorMode", 0, cPath);
     ModContext::WindowedMode = GetPrivateProfileIntA("Settings", "WindowedMode", 0, cPath);
-    ModContext::NoCd = GetPrivateProfileIntA("Settings", "NoCd", 0, cPath);
+    ModContext::NoCd = GetPrivateProfileIntA("Settings", "NoCd", 1, cPath);
+    ModContext::EnableMusicHook = GetPrivateProfileIntA("Settings", "EnableMusicHook", 1, cPath);
 
     // 2. Load Mission Count
     ModContext::MissionCount = GetPrivateProfileIntA("Missions", "Count", ModContext::MissionCount, cPath);
@@ -695,7 +765,15 @@ void Init() {
     Taxi::Hook();
     std::cout << "[SYSTEM] Taxi Hooked." << std::endl;
 
-
+    if (ModContext::EnableMusicHook) {
+        std::cout << "[SYSTEM] Hooking Music Player..." << std::endl;
+        MusicPlayer::Hook();
+        std::cout << "[SYSTEM] Music Player Hooked." << std::endl;
+    }
+    else {
+        std::cout << "[SYSTEM] Music Player Skipped (Disabled in Config)." << std::endl;
+    }
+  
     // =========================================================
     // Apply Hex Patches from Config
     // =========================================================
