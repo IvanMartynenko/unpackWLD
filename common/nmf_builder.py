@@ -232,13 +232,13 @@ class NmfBuilder:
             writer.push_int(0)
 
         # Anti-ground / Unknown floats
-        unknown_floats = data.get("unknown_floats", [])
+        unknown_floats = data.get("collision_vertices", [])
         cnt_floats = len(unknown_floats) // 3
         writer.push_int(cnt_floats)
         if cnt_floats > 0:
             writer.push_floats(unknown_floats)
 
-        unknown_ints = data.get("unknown_ints", [])
+        unknown_ints = data.get("collision_vertices", [])
         writer.push_int(len(unknown_ints))
         if len(unknown_ints) > 0:
             writer.push_ints(unknown_ints)

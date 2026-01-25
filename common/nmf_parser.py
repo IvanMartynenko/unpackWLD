@@ -222,10 +222,10 @@ class Nmf:
         unknown_count_of_floats = struct.unpack("<i", raw)[0]
         if unknown_count_of_floats > 0:
             cnt = unknown_count_of_floats * 3
-            res["unknown_floats"] = list(struct.unpack(f"<{cnt}f", f.read(4 * cnt)))
+            res["collision_vertices"] = list(struct.unpack(f"<{cnt}f", f.read(4 * cnt)))
         unknown_count_of_ints = struct.unpack("<i", f.read(4))[0]
         if unknown_count_of_ints > 0:
-            res["unknown_ints"] = list(
+            res["collision_indices"] = list(
                 struct.unpack(
                     f"<{unknown_count_of_ints}i", f.read(4 * unknown_count_of_ints)
                 )
