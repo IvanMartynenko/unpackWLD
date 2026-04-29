@@ -222,8 +222,8 @@ def convert_and_filter_nodes(nodes, filepath):
             # --- ADD MIRROR ONLY FOR ROOT ---
             S = [
                 [1, 0, 0, 0],
+                [0, 0, 1, 0],
                 [0, 1, 0, 0],
-                [0, 0, -1, 0],
                 [0, 0, 0, 1],
             ]
 
@@ -278,31 +278,42 @@ def convert_and_filter_nodes(nodes, filepath):
                     }
                 )
         if node["word"] == "JOIN":
-            id = transform_new_id
-            transform_new_id -= 1
+            if node["data"].get("anim"):
+                id = transform_new_id
+                transform_new_id -= 1
 
-            matrix = _dx_to_blender_matrix(node["data"]["matrix"])
-            new_nodes.append(
-                {
-                    "type": "transform",
-                    "name": node["name"],
-                    "id": id,
-                    "parent_id": node["parent_id"],
-                    "matrix": matrix,
-                }
-            )
+                matrix = _dx_to_blender_matrix(node["data"]["matrix"])
+                new_nodes.append(
+                    {
+                        "type": "transform",
+                        "name": node["name"],
+                        "id": id,
+                        "parent_id": node["parent_id"],
+                        "matrix": matrix,
+                    }
+                )
 
-            rot_bl = node["data"]["rotation_matrix"]
-            new_nodes.append(
-                {
-                    "type": "transform",
-                    "name": node["name"] + "_ROT",
-                    "id": node["index"],
-                    "parent_id": id,
-                    "matrix": rot_bl,
-                    "animation": node["data"].get("anim"),
-                }
-            )
+                rot_bl = node["data"]["rotation_matrix"]
+                new_nodes.append(
+                    {
+                        "type": "transform",
+                        "name": node["name"] + "_ROT",
+                        "id": node["index"],
+                        "parent_id": id,
+                        "matrix": rot_bl,
+                        "animation": node["data"].get("anim"),
+                    }
+                )
+            else:
+                new_nodes.append(
+                    {
+                        "type": "transform",
+                        "name": node["name"],
+                        "id": node["index"],
+                        "parent_id": node["parent_id"],
+                        "matrix": _dx_to_blender_matrix(node["data"]["matrix"]),
+                    }
+                )
         if node["word"] == "LOCA":
             new_nodes.append(
                 {
@@ -317,13 +328,30 @@ def convert_and_filter_nodes(nodes, filepath):
             vrts = [[t[0], t[1], t[2]] for t in mesh_data["vbuf"]]
             ibuf = [[tri[0], tri[1], tri[2]] for tri in mesh_data["ibuf"]]
             if MeshGeom.mesh_right_handed(ibuf, mesh_data):
-                ibuf = [[tri[0], tri[1], tri[2]] for tri in mesh_data["ibuf"]]
+                ibuf = [[tri[0], tri[2], tri[1]] for tri in mesh_data["ibuf"]]
 
             edge, face = EdgesFaces.build(ibuf)
             edge = [e + [0] if len(e) == 2 else e for e in edge]
 
             materials_in = mesh_data.get("materials", []) or []
             materials_out = []
+
+            for m in materials_in:
+                uints = m.get("unknown_ints")
+                if uints and len(uints) >= 4:
+                    min_vertex = uints[0]    # Сдвиг вершин (BaseVertexIndex)
+                    start_index = uints[2]   # Откуда начинаются индексы этого куска
+                    num_indices = uints[3]   # Сколько всего индексов в куске
+                    
+                    start_face = start_index // 3
+                    num_faces = num_indices // 3
+                    
+                    for f_idx in range(start_face, start_face + num_faces):
+                        if f_idx < len(ibuf):
+                            ibuf[f_idx][0] += min_vertex
+                            ibuf[f_idx][1] += min_vertex
+                            ibuf[f_idx][2] += min_vertex
+
             for m in materials_in:
                 mat_name = (m.get("name") or "lambert") + f"_{node['name']}"
                 nmf_dir = os.path.dirname(filepath)
@@ -336,7 +364,7 @@ def convert_and_filter_nodes(nodes, filepath):
                     if raw_name:
                         fname = raw_name.replace("\\", "/").split("/")[-1]
                         root, _ = os.path.splitext(fname)
-                        page = tex_info.get("texture_page")
+                        page = tex_info.get("texture_page", 0)
 
                         base = f"{root}_{page}.dds"
                         tex_path = os.path.join(nmf_dir, base)
@@ -344,18 +372,19 @@ def convert_and_filter_nodes(nodes, filepath):
                 materials_out.append(
                     {
                         "mat_name": mat_name,
-                        "r": m["red"] / 255.0,
-                        "g": m["green"] / 255.0,
-                        "b": m["blue"] / 255.0,
+                        "r": m["red"],
+                        "g": m["green"],
+                        "b": m["blue"],
                         "a": m["alpha"],
-                        "repeatU": m["vertical_stretch"],
-                        "repeatV": m["horizontal_stretch"],
+                        "repeatU": m["horizontal_stretch"],
+                        "repeatV": m["vertical_stretch"],
                         "mirrorU": m["uv_mapping_flip_vertical"],
                         "mirrorV": m["uv_mapping_flip_horizontal"],
                         "rotateUV": _get_rotation_degrees(m["rotate"]),
                         "tex_path": tex_path,
                         "has_tex": bool(tex_path),
                         "blend_mode": m["blend_mode"],
+                        "unknown_ints": m.get("unknown_ints", [])
                     }
                 )
 
@@ -379,5 +408,5 @@ def convert_and_filter_nodes(nodes, filepath):
                 }
             )
 
-    new_nodes = _collapse_single_mesh_transforms(new_nodes)
+    # new_nodes = _collapse_single_mesh_transforms(new_nodes)
     return new_nodes

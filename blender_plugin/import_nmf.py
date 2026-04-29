@@ -16,8 +16,8 @@ License: MIT License
 import bpy
 import math
 from mathutils import Matrix
-from .nmf_parser import Nmf
-from .nmf_convertor import convert_and_filter_nodes
+#from .nmf_parser import Nmf
+#from .nmf_convertor import convert_and_filter_nodes
 
 
 # ------------------------------------------------------------------------
@@ -81,6 +81,8 @@ def _create_material_from_nmf(mat_info):
     # If alpha = transparency instead of opacity, you can invert:
     # a = 1.0 - a_src
     a = a_src
+
+    mat.diffuse_color = (r, g, b, a)
 
     bsdf.inputs["Base Color"].default_value = (r, g, b, 1.0)
     bsdf.inputs["Alpha"].default_value = a
@@ -342,6 +344,24 @@ def _build_objects_from_nodes(nodes, collection):
                 if mat.name not in existing_names:
                     mesh.materials.append(mat)
                     existing_names.append(mat.name)
+
+                # Узнаем индекс этого материала в меше
+                mat_idx = existing_names.index(mat.name)
+
+                # Читаем unknown_ints, чтобы понять, к каким полигонам его привязать
+                uints = mat_info.get("unknown_ints")
+                if uints and len(uints) >= 4:
+                    start_index = uints[2]   # индекс начала в буфере
+                    num_indices = uints[3]   # сколько всего индексов
+                    
+                    # Делим на 3, так как треугольник состоит из 3 индексов
+                    start_face = start_index // 3
+                    num_faces = num_indices // 3
+
+                    # Назначаем этот материал нужным полигонам
+                    for f_idx in range(start_face, start_face + num_faces):
+                        if f_idx < len(mesh.polygons):
+                            mesh.polygons[f_idx].material_index = mat_idx
 
             obj = bpy.data.objects.new(name, mesh)
             collection.objects.link(obj)

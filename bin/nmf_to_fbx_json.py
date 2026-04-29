@@ -117,8 +117,6 @@ def _dx_to_blender_matrix(dx_m):
     DirectX (Row-Major) to Blender/OpenGL (Column-Major conceptually or just Transposed).
     This effectively transposes the matrix.
     """
-    if not dx_m:
-        return [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
     return [[dx_m[j][i] for j in range(4)] for i in range(4)]
 
 
@@ -702,10 +700,10 @@ def generate_fbx_header_json():
                     [],
                     "",
                     [
-                        ["P", ["UpAxis", "int", "Integer", "", 1], "SSSSI", []],
+                        ["P", ["UpAxis", "int", "Integer", "", 2], "SSSSI", []],
                         ["P", ["UpAxisSign", "int", "Integer", "", 1], "SSSSI", []],
-                        ["P", ["FrontAxis", "int", "Integer", "", 2], "SSSSI", []],
-                        ["P", ["FrontAxisSign", "int", "Integer", "", 1], "SSSSI", []],
+                        ["P", ["FrontAxis", "int", "Integer", "", 1], "SSSSI", []],
+                        ["P", ["FrontAxisSign", "int", "Integer", "", -1], "SSSSI", []],
                         ["P", ["CoordAxis", "int", "Integer", "", 0], "SSSSI", []],
                         ["P", ["CoordAxisSign", "int", "Integer", "", 1], "SSSSI", []],
                         [

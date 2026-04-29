@@ -101,8 +101,17 @@ _HEAD_MAGIC = b"Kaydara FBX Binary\x20\x20\x00\x1a\x00"
 _TIME_ID = b"1970-01-01 10:00:00:000"
 _FILE_ID = b"\x28\xb3\x2a\xeb\xb6\x24\xcc\xc2\xbf\xc8\xb0\x2a\xa9\x2b\xfc\xf1"
 _FOOT_ID = b"\xfa\xbc\xab\x09\xd0\xc8\xd4\x66\xb1\x76\xfb\x83\x1c\xf7\x26\x7e"
-_ELEMS_ID_ALWAYS_BLOCK_SENTINEL = {b"AnimationStack", b"AnimationLayer"}
-
+# _ELEMS_ID_ALWAYS_BLOCK_SENTINEL = {b"AnimationStack", b"AnimationLayer"}
+_ELEMS_ID_ALWAYS_BLOCK_SENTINEL = {
+    b"AnimationStack", 
+    b"AnimationLayer", 
+    b"Properties70", 
+    b"PropertyTemplate", 
+    b"References",
+    b"Definitions",
+    b"ObjectType",
+    b"MetaData"
+}
 
 class FBXElem:
     __slots__ = ("id", "props", "props_type", "elems", "_props_length", "_end_offset")
@@ -520,8 +529,7 @@ def _mat_mul(a, b):
     return res
 
 
-def decompose_directx_row_major(m_raw):
-    m = _dx_to_blender_matrix(m_raw)
+def decompose_directx_row_major(m):
     tx, ty, tz = m[0][3], m[1][3], m[2][3]
     r0 = [m[0][0], m[1][0], m[2][0]]
     r1 = [m[0][1], m[1][1], m[2][1]]
@@ -670,6 +678,13 @@ def animation_build_tracks_by_axis(raw_values):
             vals = [float(v) for v in vlist]
             if track == "rotation":
                 vals = [v * RAD2DEG for v in vals]
+                if len(vals) == 2 and abs(vals[0] - vals[1])/360 > 0.99:
+                    tmp = vals[1]
+                    vals[1] = (vals[1] - vals[0]) / 2
+                    vals.append(tmp)
+                    tmp = frames[1]
+                    frames[1] = (frames[1] + frames[0]) / 2
+                    frames.append(tmp)
             track_hash[ax] = {"frames": frames, "values": vals}
         if track_hash:
             result[track] = track_hash
@@ -684,6 +699,14 @@ class UidGen:
         self.v += 1
         return self.v
 
+def _make_translation_matrix(v):
+    x, y, z = v
+    return [
+        [1.0, 0.0, 0.0, x],
+        [0.0, 1.0, 0.0, y],
+        [0.0, 0.0, 1.0, z],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
 
 def process_scene_nodes(nodes, uid_gen):
     result = []
@@ -698,58 +721,140 @@ def process_scene_nodes(nodes, uid_gen):
         parent_id = parent["id"] if parent else 0
         processed = None
 
-        if w == "ROOT" or w == "FRAM":
+        if w == "ROOT":
             processed = {
                 "node_type": "fram",
                 "node_name": node["name"],
                 "mesh": False,
-                "rotate_pivot_translate": unpacked.get(
-                    "rotate_pivot_translate", [0, 0, 0]
-                ),
-                "rotate_pivot": unpacked.get("rotate_pivot", [0, 0, 0]),
-                "scale_pivot_translate": unpacked.get(
-                    "scale_pivot_translate", [0, 0, 0]
-                ),
-                "scale_pivot": unpacked.get("scale_pivot", [0, 0, 0]),
             }
-            if w == "ROOT":
-                base_matrix = unpacked["matrix"]
-                S = [[-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
-                M2 = _mat_mul(S, base_matrix)
-                t, s, r = decompose_directx_row_major(M2)
-                processed["translation"] = [x * 1 for x in t]
-                processed["scaling"] = [x * 1 for x in s]
-                processed["rotation"] = [x * RAD2DEG for x in r]
+            base_matrix = unpacked["matrix"]
+            S = [
+                [1, 0, 0, 0],
+                [0, 0, 1, 0],
+                [0, 1, 0, 0],
+                [0, 0, 0, 1],
+            ]
+            mm = _dx_to_blender_matrix(unpacked["matrix"])
+            M2 = _mat_mul(S, mm)
+            t, s, r = decompose_directx_row_major(M2)
+            processed["translation"] = [x * 1 for x in t]
+            processed["scaling"] = [x * 1 for x in s]
+            processed["rotation"] = [x * RAD2DEG for x in r]
+            if processed["rotation"][0] == 90.0:
+                processed["rotation"] = [90.0, 0.0, 0.0]
             else:
-                if (
-                    processed["rotate_pivot_translate"] == [0, 0, 0]
-                    and processed["rotate_pivot"] == [0, 0, 0]
-                    and processed["scale_pivot_translate"] == [0, 0, 0]
-                    and processed["scale_pivot"] == [0, 0, 0]
-                ):
-                    t, s, r = decompose_directx_row_major(unpacked["matrix"])
-                    processed["translation"] = t
-                    processed["scaling"] = s
-                    processed["rotation"] = [x * RAD2DEG for x in r]
-                else:
-                    processed["translation"] = unpacked["translation"]
-                    processed["scaling"] = unpacked["scaling"]
-                    processed["rotation"] = [x * RAD2DEG for x in unpacked["rotation"]]
+                processed["rotation"] = [0.0, 0.0, -180.0]
+        elif w == "FRAM":
+            if unpacked.get("anim"):
+                processed = {
+                    "node_type": "fram",
+                    "node_name": node["name"],
+                    "mesh": False,
+                    "rotate_pivot_translate": unpacked.get(
+                        "rotate_pivot_translate", [0, 0, 0]
+                    ),
+                    "rotate_pivot": unpacked.get("rotate_pivot", [0, 0, 0]),
+                    "scale_pivot_translate": unpacked.get(
+                        "scale_pivot_translate", [0, 0, 0]
+                    ),
+                    "scale_pivot": unpacked.get("scale_pivot", [0, 0, 0]),
+                }
+                processed["translation"] = unpacked["translation"]
+                processed["scaling"] = unpacked["scaling"]
+                processed["rotation"] = [x * RAD2DEG for x in unpacked["rotation"]]
+            else:
+                processed = {
+                    "node_type": "fram",
+                    "node_name": node["name"],
+                    "mesh": False,
+                }
+                mm = _dx_to_blender_matrix(unpacked["matrix"])
+                t, s, r = decompose_directx_row_major(mm)
+                processed["translation"] = t
+                processed["scaling"] = s
+                processed["rotation"] = [x * RAD2DEG for x in r]
             processed["animations"] = animation_build_tracks_by_axis(
                 unpacked.get("anim", {})
             )
+        # elif w == "FRAM":
+        #     if unpacked.get("anim"):
+        #         matrix = _dx_to_blender_matrix(unpacked["matrix"])
+        #         pivot_bl = unpacked["scale_pivot"]
+
+        #         # Генерируем новый ID для Главной Анимированной Ноды
+        #         anim_id = uid_gen.next()
+
+        #         parent_matrix = _mat_mul(matrix, _make_translation_matrix(pivot_bl))
+        #         pivot_matrix = _make_translation_matrix([-1 * j for j in pivot_bl])
+
+        #         t, s, r = decompose_directx_row_major(parent_matrix)
+
+        #         parent_node = {
+        #             "node_type": "fram",
+        #             "node_name": node["name"],
+        #             "mesh": False,
+        #             "id": anim_id,
+        #             "parent_id": parent_id,
+        #             "translation": t,
+        #             "scaling": s,
+        #             "rotation": [x * RAD2DEG for x in r],
+        #             "animations": animation_build_tracks_by_axis(unpacked.get("anim", {})),
+        #             "with_animation": True,
+        #         }
+        #         result.append(parent_node)
+
+        #         # --- 2. ДОЧЕРНЯЯ НОДА (Офсет для геометрии) ---
+        #         # Она становится processed, чтобы в конце цикла получить оригинальный node["id"]
+        #         t, s, r = decompose_directx_row_major(pivot_matrix)
+        #         processed = {
+        #             "node_type": "fram",
+        #             "node_name": node["name"] + "_PIVOT",
+        #             "mesh": False,
+        #             "translation": t,
+        #             "scaling": s,
+        #             "rotation": [x * RAD2DEG for x in r],
+        #             "animations": {}, # У офсета анимаций нет
+        #         }
+                
+        #         # Подменяем parent_id, чтобы эта офсет-нода крепилась к нашей новой анимированной ноде
+        #         parent_id = anim_id 
+        #     else:
+        #         # Без анимаций
+        #         processed = {
+        #             "node_type": "fram",
+        #             "node_name": node["name"],
+        #             "mesh": False,
+        #         }
+        #         mm = _dx_to_blender_matrix(unpacked["matrix"])
+        #         t, s, r = decompose_directx_row_major(mm)
+        #         processed["translation"] = t
+        #         processed["scaling"] = s
+        #         processed["rotation"] = [x * RAD2DEG for x in r]
+        #         processed["animations"] = animation_build_tracks_by_axis(unpacked.get("anim", {}))
 
         elif w == "JOIN":
-            processed = {
-                "node_type": "joint",
-                "node_name": node["name"],
-                "mesh": False,
-                "translation": unpacked["translation"],
-                "scaling": unpacked["scaling"],
-                "rotation": [r * RAD2DEG for r in unpacked["rotation"]],
-            }
-            m3 = extract_3x3(unpacked.get("rotation_matrix"))
-            processed["joint_orient"] = matrix_rowmajor_to_euler_xyz_standard(m3)
+            if unpacked.get("anim"):
+                processed = {
+                    "node_type": "joint",
+                    "node_name": node["name"],
+                    "mesh": False,
+                    "translation": unpacked["translation"],
+                    "scaling": unpacked["scaling"],
+                    "rotation": [r * RAD2DEG for r in unpacked["rotation"]],
+                }
+                m3 = extract_3x3(unpacked.get("rotation_matrix"))
+                processed["joint_orient"] = matrix_rowmajor_to_euler_xyz_standard(m3)
+            else:
+                processed = {
+                    "node_type": "fram",
+                    "node_name": node["name"],
+                    "mesh": False,
+                }
+                mm = _dx_to_blender_matrix(unpacked["matrix"])
+                t, s, r = decompose_directx_row_major(mm)
+                processed["translation"] = t
+                processed["scaling"] = s
+                processed["rotation"] = [x * RAD2DEG for x in r]
             processed["animations"] = animation_build_tracks_by_axis(
                 unpacked.get("anim", {})
             )
@@ -777,6 +882,33 @@ def process_scene_nodes(nodes, uid_gen):
             if not is_mesh_right_handed(raw_ibuf, raw_vbuf):
                 raw_ibuf = [[t[0], t[2], t[1]] for t in raw_ibuf]
 
+            materials_in = unpacked.get("materials", []) or []
+
+            # Создаем массив, где для каждого полигона будет указан индекс его материала
+            poly_mat_indices = [0] * len(raw_ibuf)
+            
+            for mat_idx, m in enumerate(materials_in):
+                uints = m.get("unknown_ints")
+                if uints and len(uints) >= 4:
+                    min_vertex = uints[0]    # Смещение вершин
+                    start_index = uints[2]   # Откуда начинаются индексы
+                    num_indices = uints[3]   # Сколько индексов
+                    
+                    start_face = start_index // 3
+                    num_faces = num_indices // 3
+                    
+                    for f_idx in range(start_face, start_face + num_faces):
+                        if f_idx < len(raw_ibuf):
+                            poly_mat_indices[f_idx] = mat_idx
+                            # Сдвигаем локальные индексы в глобальные
+                            raw_ibuf[f_idx][0] += min_vertex
+                            raw_ibuf[f_idx][1] += min_vertex
+                            raw_ibuf[f_idx][2] += min_vertex
+
+            # Переворачиваем нормали, если нужно, уже после сдвига индексов!
+            if not is_mesh_right_handed(raw_ibuf, raw_vbuf):
+                raw_ibuf = [[t[0], t[2], t[1]] for t in raw_ibuf]
+
             processed["vrts"] = [[t[0], t[1], t[2]] for t in raw_vbuf]
             processed["PolygonVertexIndex"] = make_polygon_vertex_index_from_tris(
                 raw_ibuf
@@ -784,6 +916,8 @@ def process_scene_nodes(nodes, uid_gen):
             processed["Edges"] = build_fbx_edges_from_pvi(
                 processed["PolygonVertexIndex"]
             )
+            # Сохраняем карту материалов для записи в FBX
+            processed["poly_mat_indices"] = poly_mat_indices
 
             uv_direct, uv_index = build_fbx_uv_layer(raw_vbuf, raw_ibuf)
             processed["UV"] = uv_direct
@@ -792,8 +926,7 @@ def process_scene_nodes(nodes, uid_gen):
             normals, normals_w = build_fbx_normals_flat(processed["vrts"], raw_ibuf)
             processed["Normals"] = normals
             processed["NormalsW"] = normals_w
-
-            materials_in = unpacked.get("materials", []) or []
+            
             materials_out = []
             if not materials_in:
                 mat_name = f"lambert_{processed['node_name']}"
@@ -825,8 +958,6 @@ def process_scene_nodes(nodes, uid_gen):
                             + "_"
                             + str(tex_data.get("texture_page", 0))
                         )
-                        # Note: The path below is specific to the original environment.
-                        # You may need to adjust this for your own texture location.
                         tex_path = f"{name_without_ext}.dds"
                     materials_out.append(
                         {
@@ -847,6 +978,8 @@ def process_scene_nodes(nodes, uid_gen):
             processed["materials_data"] = materials_out
 
         if processed:
+            # Оригинальный ID присваивается именно объекту `processed`. 
+            # Для нод с пивотом это будет `_PIVOT`, поэтому геометрия и дети найдут его корректно!
             processed["id"] = node["id"]
             processed["parent_id"] = parent_id
             processed["with_animation"] = bool(processed.get("animations"))
@@ -861,7 +994,6 @@ def process_scene_nodes(nodes, uid_gen):
                 if parent_node["node_type"] == "fram":
                     parent_node["mesh"] = True
     return result
-
 
 def generate_fbx_header_json():
     t = time.localtime()
@@ -1009,15 +1141,15 @@ def generate_fbx_header_json():
                     [],
                     "",
                     [
-                        ["P", ["UpAxis", "int", "Integer", "", 1], "SSSSI", []],
+                        ["P", ["UpAxis", "int", "Integer", "", 2], "SSSSI", []],
                         ["P", ["UpAxisSign", "int", "Integer", "", 1], "SSSSI", []],
-                        ["P", ["FrontAxis", "int", "Integer", "", 2], "SSSSI", []],
-                        ["P", ["FrontAxisSign", "int", "Integer", "", 1], "SSSSI", []],
+                        ["P", ["FrontAxis", "int", "Integer", "", 1], "SSSSI", []],
+                        ["P", ["FrontAxisSign", "int", "Integer", "", -1], "SSSSI", []],
                         ["P", ["CoordAxis", "int", "Integer", "", 0], "SSSSI", []],
                         ["P", ["CoordAxisSign", "int", "Integer", "", 1], "SSSSI", []],
                         [
                             "P",
-                            ["UnitScaleFactor", "double", "Number", "", 1.0],
+                            ["UnitScaleFactor", "double", "Number", "", 100.0],
                             "SSSSD",
                             [],
                         ],
@@ -1175,11 +1307,7 @@ def model_values_prop(name, values):
     ]
 
 
-def generate_rnd_id():
-    return int(time.time() * 10000) + random.randint(0, 100000)
-
-
-def create_fbx_animation_data(node, model_id, layer_id):
+def create_fbx_animation_data(node, model_id, layer_id, uid_gen):
     fbx_objects = []
     fbx_connections = []
     spec_map = {
@@ -1206,7 +1334,7 @@ def create_fbx_animation_data(node, model_id, layer_id):
         if not has_keys:
             continue
 
-        curve_node_id = generate_rnd_id()
+        curve_node_id = uid_gen.next()
         curve_node_name = f"{spec['prefix']}::AnimCurveNode"
 
         props_list = []
@@ -1236,7 +1364,7 @@ def create_fbx_animation_data(node, model_id, layer_id):
             values = ax_data.get("values")
             if not frames:
                 continue
-            curve_id = generate_rnd_id()
+            curve_id = uid_gen.next()
             n_keys = len(frames)
             times = [int(f * KTIME_PER_FRAME) for f in frames]
             vals = [float(v) for v in values]
@@ -1530,18 +1658,36 @@ def assemble_fbx_structure(nodes, uid_gen):
                             ["C", ["OP", tex_id, mat_id, "DiffuseColor"], "SLLS", []]
                         )
 
-                layer_material = [
-                    "LayerElementMaterial",
-                    [0],
-                    "I",
-                    [
-                        ["Version", [101], "I", []],
-                        ["Name", [""], "S", []],
-                        ["MappingInformationType", ["AllSame"], "S", []],
-                        ["ReferenceInformationType", ["IndexToDirect"], "S", []],
-                        ["Materials", [[0]], "i", []],
-                    ],
-                ]
+                poly_mat_indices = node.get("poly_mat_indices", [0])
+                
+                # Если материалов больше 1, назначаем их по полигонам ("ByPolygon")
+                if len(mat_data_list) > 1:
+                    layer_material = [
+                        "LayerElementMaterial",
+                        [0],
+                        "I",
+                        [
+                            ["Version", [101], "I", []],
+                            ["Name", [""], "S", []],
+                            ["MappingInformationType", ["ByPolygon"], "S", []],
+                            ["ReferenceInformationType", ["IndexToDirect"], "S", []],
+                            ["Materials", [poly_mat_indices], "i", []],
+                        ],
+                    ]
+                else:
+                    # Если материал один, применяем ко всему мешу ("AllSame")
+                    layer_material = [
+                        "LayerElementMaterial",
+                        [0],
+                        "I",
+                        [
+                            ["Version", [101], "I", []],
+                            ["Name", [""], "S", []],
+                            ["MappingInformationType", ["AllSame"], "S", []],
+                            ["ReferenceInformationType", ["IndexToDirect"], "S", []],
+                            ["Materials", [[0]], "i", []],
+                        ],
+                    ]
                 mesh_obj = [
                     "Geometry",
                     [geom_id, f"{node['node_name']}::Geometry", "Mesh"],
@@ -1635,7 +1781,7 @@ def assemble_fbx_structure(nodes, uid_gen):
 
             if node.get("with_animation"):
                 anim_objs, anim_conns = create_fbx_animation_data(
-                    node, node["id"], animation_layer_id
+                    node, node["id"], animation_layer_id, uid_gen
                 )
                 objects.extend(anim_objs)
                 connections.extend(anim_conns)
