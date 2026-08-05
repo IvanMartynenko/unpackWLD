@@ -214,7 +214,7 @@ def _apply_anim_to_object(obj, anim_tracks):
     Writes keys directly to the object:
       translation -> location
       rotation    -> rotation_euler (XYZ, rad)
-      scaling     -> scale
+      scale       -> scale
     """
     if not anim_tracks:
         return
@@ -225,7 +225,7 @@ def _apply_anim_to_object(obj, anim_tracks):
     spec = {
         "translation": ("location", (0, 1, 2), 1.0),
         "rotation": ("rotation_euler", (0, 1, 2), 1.0),  # already in radians
-        "scaling": ("scale", (0, 1, 2), 1.0),
+        "scale": ("scale", (0, 1, 2), 1.0),
     }
 
     for track, (prop, idxs, scale) in spec.items():
@@ -234,7 +234,7 @@ def _apply_anim_to_object(obj, anim_tracks):
             continue
 
         values = track_data.get("values", {})
-        keys = track_data.get("keys", {})
+        keys = track_data.get("times", {})
 
         for ax_name, ax_i in zip(("x", "y", "z"), idxs):
             vals = values.get(ax_name)

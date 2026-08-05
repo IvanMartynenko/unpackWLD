@@ -12,9 +12,9 @@ Description:
     Logic:
     1. Parses .nmf to dictionary structure.
     2. Finds 'MESH' nodes.
-    3. Calculates Axis-Aligned Bounding Box (AABB) from 'vbuf'.
-    4. Writes Min/Max points to 'unknown_floats' (collision_vertices).
-    5. Sets 'unknown_ints' (collision_indices) to [0, 1].
+    3. Calculates Axis-Aligned Bounding Box (AABB) from 'vertices'.
+    4. Writes Min/Max points to 'collision_vertices'.
+    5. Sets 'collision_indices' to [0, 1].
     6. Re-packs into binary .nmf.
 
 Usage:
@@ -84,9 +84,9 @@ def patch_nmf_antiground(input_path, output_path):
         # 2. Data modification
         for node in nodes:
             # Look for MESH type nodes
-            if node.get("word") == "MESH":
-                mesh_data = node.get("data", {})
-                vbuf = mesh_data.get("vbuf")
+            if node.get("type") == "MESH":
+                mesh_data = node.get("payload", {})
+                vbuf = mesh_data.get("vertices")
 
                 if vbuf and len(vbuf) > 0:
                     mesh_count += 1
@@ -95,9 +95,6 @@ def patch_nmf_antiground(input_path, output_path):
                     col_floats, col_ints = calculate_aabb(vbuf)
 
                     if col_floats:
-                        # IMPORTANT: If you renamed keys in the parser (e.g., to collision_vertices),
-                        # change 'unknown_floats' to your new name here.
-                        # Currently using original names from the repository.
                         mesh_data["collision_vertices"] = col_floats
                         mesh_data["collision_indices"] = col_ints
 

@@ -14,9 +14,32 @@ Features:
     - Imports mesh geometry (vertices, faces, UVs, normals).
     - Reconstructs the node hierarchy (Frames, Joints, Locators).
     - Converts joint orientation and rotation limits.
-    - Imports material assignments and texture file paths.
+    - Imports material assignments and texture file paths, including
+      ambient/specular/emissive/specular-power (written as a `phong`
+      shader, not `lambert` - see note below) and UV mirroring.
     - Converts basic TRS (Translation, Rotation, Scaling) animation tracks
       to Maya animation curves.
+
+Note on the game's Maya importer (see docs/MAYA_IMPORTER_FINDINGS.md):
+    The game's own editor imports `.ma` files through a hand-rolled ASCII
+    parser, not real Maya. It was disassembled to find exactly which node
+    types/attributes it recognizes, and this exporter only emits attributes
+    confirmed to be read by that importer:
+      - mesh: `.vrts`, `.edge`, `.uvpt`, `.face` (+ `f`/`mf` sub-records)
+      - transform/joint: `.translate`, `.rotate`, `.scale`, pivot/shear
+        attrs, `.jointOrient`, `.minRotLimit`, `.maxRotLimit`
+      - material (`blinn`/`phong` only - `lambert` is not reliably
+        recognized): `.color`, `.transparency`, `.ambientColor`,
+        `.specularColor`, `.incandescence`, `.cosinePower`
+      - `place2dTexture`: `.repeatU`, `.repeatV`, `.rotateUV`, `.mirrorU`,
+        `.mirrorV`; `file`: `.fileTextureName`
+      - `animCurveT*`: `.tangentType`, `.keyTimeValue`
+    The 5 per-mesh render flags (`backface_culling`, `complex`, `inside`,
+    `smooth`, `light_flare`) and the material `blend_mode` are deliberately
+    NOT written here: they are set in the game's own model editor after
+    import (a right-click menu on the mesh / a separate Material Manager
+    panel), not read from any `.ma` attribute - there is nothing to set
+    that the importer would actually consume.
 
 License: MIT License
 
@@ -75,7 +98,7 @@ class MeshGeom:
 
     @staticmethod
     def mesh_right_handed(ibuf: List[List[int]], mesh_data: Dict[str, Any]) -> bool:
-        vbuf = mesh_data["vbuf"]
+        vbuf = mesh_data["vertices"]
         pos = [MeshGeom.pos_of(r) for r in vbuf]
         nrm = [MeshGeom.nrm_of(r) for r in vbuf]
         pos_cnt = 0
@@ -101,18 +124,18 @@ class MeshGeom:
 
 
 def convert_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Adaptation for the structure from Nmf(): parent_id/index, word."""
+    """Adaptation for the structure from Nmf(): parent/index, type."""
     result = []
     index_map = {n["index"]: n for n in nodes}
     for node in nodes:
-        unpacked_node = node["data"]
+        unpacked_node = node["payload"]
         node_name = node["name"]
-        parent = index_map.get(node.get("parent_id"))
+        parent = index_map.get(node.get("parent"))
         parent_name = parent["name"] if parent else None
-        if node.get("parent_id") == 1:
+        if node.get("parent") == 1:
             parent_name = None
 
-        w = node["word"]
+        w = node["type"]
         if w in ("ROOT", "FRAM"):
             result.append(
                 create_fram(
@@ -140,22 +163,56 @@ def convert_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return result
 
 
+# Confirmed via docs/GHIDRA_FINDINGS.md: `interpolation` set on an `ANIM` block
+# selects the engine's own eased keyframe interpolation - a cosine ease-in-out,
+# `(1 - cos(pi*t)) / 2` (from the exact float constants read out of VaBank.exe's
+# .rdata). Checked against the full asset set: set on 77% of ANIM blocks, not a
+# rare case. Maya's own animation curves can represent this natively via keyframe
+# tangent types, but this keeps parity with the FBX/glTF paths (see
+# `NmfSceneConverter._apply_ease_supersampling`) by baking extra, densely-eased
+# intermediate keyframes along each real segment instead.
+_EASE_SAMPLES_PER_SEGMENT = 8
+
+
+def _ease_cosine(t: float) -> float:
+    return (1.0 - math.cos(math.pi * t)) / 2.0
+
+
+def _apply_ease_supersampling(
+    frames: List[float], values: List[float], eased: bool
+) -> Tuple[List[float], List[float]]:
+    if not eased or len(frames) < 2:
+        return frames, values
+    n = _EASE_SAMPLES_PER_SEGMENT
+    out_frames = [frames[0]]
+    out_values = [values[0]]
+    for i in range(1, len(frames)):
+        f0, f1 = frames[i - 1], frames[i]
+        v0, v1 = values[i - 1], values[i]
+        for s in range(1, n + 1):
+            t = s / n
+            out_frames.append(f0 + (f1 - f0) * t)
+            out_values.append(v0 + (v1 - v0) * _ease_cosine(t))
+    return out_frames, out_values
+
+
 def animation_build_tracks_by_axis(
     raw_values: Dict[str, Any],
 ) -> Dict[str, Dict[str, Dict[str, List[float]]]]:
     axes = ("x", "y", "z")
+    eased = bool(raw_values.get("interpolation"))
     result: Dict[str, Dict[str, Dict[str, List[float]]]] = {}
-    for track in ("translation", "rotation", "scaling"):
+    for track in ("translation", "rotation", "scale"):
         anim = raw_values.get(track)
         if not anim:
             continue
-        keys = anim.get("keys")
+        times = anim.get("times")
         values = anim.get("values")
-        if not keys or not values:
+        if not times or not values:
             continue
         track_hash: Dict[str, Dict[str, List[float]]] = {}
         for ax in axes:
-            tlist = keys.get(ax)
+            tlist = times.get(ax)
             vlist = values.get(ax)
             if not tlist or not vlist:
                 continue
@@ -163,6 +220,7 @@ def animation_build_tracks_by_axis(
             vals = [float(v) for v in vlist]
             if track == "rotation":
                 vals = [v * RAD2DEG for v in vals]
+            frames, vals = _apply_ease_supersampling(frames, vals, eased)
             track_hash[ax] = {"frames": frames, "values": vals}
         if track_hash:
             result[track] = track_hash
@@ -236,10 +294,10 @@ def create_fram(
     result["node_name"] = node_name
     result["parent_node_name"] = parent_node_name
     result["translation"] = fram_data["translation"]
-    result["scaling"] = fram_data["scaling"]
+    result["scale"] = fram_data["scale"]
     result["rotation"] = [r * RAD2DEG for r in fram_data["rotation"]]
     result["node_type"] = "fram"
-    result["matrix"] = fram_data["matrix"]
+    result["matrix"] = fram_data["local_matrix"]
     result["rotate_pivot_translate"] = fram_data.get(
         "rotate_pivot_translate", [0.0, 0.0, 0.0]
     )
@@ -249,7 +307,7 @@ def create_fram(
     )
     result["scale_pivot"] = fram_data.get("scale_pivot", [0.0, 0.0, 0.0])
     result["shear"] = fram_data.get("shear", [0.0, 0.0, 0.0])
-    anim = animation_build_tracks_by_axis(fram_data.get("anim", {}))
+    anim = animation_build_tracks_by_axis(fram_data.get("animation", {}))
     result["with_animation"] = bool(anim)
     result["animations"] = anim
     return result
@@ -262,16 +320,16 @@ def create_joint(
     result["node_name"] = node_name
     result["parent_node_name"] = parent_node_name
     result["translation"] = fram_data["translation"]
-    result["scaling"] = fram_data["scaling"]
+    result["scale"] = fram_data["scale"]
     result["rotation"] = [r * RAD2DEG for r in fram_data["rotation"]]
     result["node_type"] = "joint"
-    result["matrix"] = fram_data["matrix"]
-    result["rotation_matrix"] = fram_data["rotation_matrix"]
-    result["min_rot_limit"] = fram_data["min_rot_limit"]
-    result["max_rot_limit"] = fram_data["max_rot_limit"]
+    result["matrix"] = fram_data["local_matrix"]
+    result["rotation_matrix"] = fram_data["joint_orient_matrix"]
+    result["min_rot_limit"] = fram_data["rotation_limit_min"]
+    result["max_rot_limit"] = fram_data["rotation_limit_max"]
     m3 = extract_3x3(result["rotation_matrix"])
     result["joint_orient"] = matrix_rowmajor_to_euler_xyz_standard(m3)
-    anim = animation_build_tracks_by_axis(fram_data.get("anim", {}))
+    anim = animation_build_tracks_by_axis(fram_data.get("animation", {}))
     result["with_animation"] = bool(anim)
     result["animations"] = anim
     return result
@@ -294,13 +352,13 @@ def create_mesh(
     result["node_name"] = node_name
     result["parent_node_name"] = parent_node_name
 
-    result["vrts"] = [[t[0], t[1], t[2]] for t in mesh_data["vbuf"]]
-    ibuf = [[tri[0], tri[1], tri[2]] for tri in mesh_data["ibuf"]]
+    result["vrts"] = [[t[0], t[1], t[2]] for t in mesh_data["vertices"]]
+    ibuf = [[tri[0], tri[1], tri[2]] for tri in mesh_data["indices"]]
 
     ibuf = (
-        [[tri[0], tri[2], tri[1]] for tri in mesh_data["ibuf"]]
+        [[tri[0], tri[2], tri[1]] for tri in mesh_data["indices"]]
         if MeshGeom.mesh_right_handed(ibuf, mesh_data)
-        else [[tri[0], tri[1], tri[2]] for tri in mesh_data["ibuf"]]
+        else [[tri[0], tri[1], tri[2]] for tri in mesh_data["indices"]]
     )
     result["ibuf"] = ibuf
 
@@ -308,13 +366,13 @@ def create_mesh(
     result["edge"] = [e + [0] if len(e) == 2 else e for e in edge]
     result["face"] = face
 
-    # UVs: there is a separate uvpt in the binary; if not, take from vbuf[6:8]
-    # if 'uvpt' in mesh_data and mesh_data['uvpt']:
-    #     result['uvpt'] = [[float(u), float(v)] for (u, v) in mesh_data['uvpt']]
+    # UVs: there is a separate source_uv in the binary; if not, take from vertices[6:8]
+    # if 'source_uv' in mesh_data and mesh_data['source_uv']:
+    #     result['uvpt'] = [[float(u), float(v)] for (u, v) in mesh_data['source_uv']]
     # else:
     result["uvpt"] = [
         [float((t[6] if len(t) > 6 else 0.0)), float((t[7] if len(t) > 7 else 0.0))]
-        for t in mesh_data["vbuf"]
+        for t in mesh_data["vertices"]
     ]
 
     result["uv_index_of_vertex"] = list(range(len(result["vrts"])))
@@ -322,8 +380,12 @@ def create_mesh(
     materials_in = mesh_data.get("materials", []) or []
     materials_out = []
     for m in materials_in:
-        mat_name = (m.get("name") or "lambert") + f"_{result['node_name']}"
-        a = float(m.get("alpha", 0.0))
+        mat_name = (m.get("name") or "phong") + f"_{result['node_name']}"
+        diffuse = m.get("diffuse", [0.8, 0.8, 0.8, 0.0])
+        ambient = m.get("ambient", [0.0, 0.0, 0.0, 0.0])
+        specular = m.get("specular", [0.0, 0.0, 0.0, 0.0])
+        emissive = m.get("emissive", [0.0, 0.0, 0.0, 0.0])
+        a = float(diffuse[3]) if len(diffuse) > 3 else 0.0
         tex_path = (
             m.get("texture", {}).get("name")
             if isinstance(m.get("texture"), dict)
@@ -335,16 +397,20 @@ def create_mesh(
             {
                 "mat_name": mat_name,
                 "sg_name": f"{mat_name}SG",
-                "r": float(m.get("red", 0.8)),
-                "g": float(m.get("green", 0.8)),
-                "b": float(m.get("blue", 0.8)),
+                "r": float(diffuse[0]) if len(diffuse) > 0 else 0.8,
+                "g": float(diffuse[1]) if len(diffuse) > 1 else 0.8,
+                "b": float(diffuse[2]) if len(diffuse) > 2 else 0.8,
                 "a": a,
                 "t": a,
-                "repeatU": int(m.get("horizontal_stretch", 1)),
-                "repeatV": int(m.get("vertical_stretch", 1)),
-                "mirrorU": int(m.get("uv_mapping_flip_horizontal", 0)),
-                "mirrorV": int(m.get("uv_mapping_flip_vertical", 0)),
-                "rotateUV": int(m.get("rotate", 0)),
+                "ambient": [float(c) for c in (ambient + [0.0, 0.0, 0.0])[:3]],
+                "specular": [float(c) for c in (specular + [0.0, 0.0, 0.0])[:3]],
+                "emissive": [float(c) for c in (emissive + [0.0, 0.0, 0.0])[:3]],
+                "specular_power": float(m.get("specular_power", 0.0)),
+                "repeatU": int(m.get("uv_scale_u", 1)),
+                "repeatV": int(m.get("uv_scale_v", 1)),
+                "mirrorU": int(m.get("uv_flip_u", 0)),
+                "mirrorV": int(m.get("uv_flip_v", 0)),
+                "rotateUV": int(m.get("uv_rotation", 0)),
                 "tex_path": tex_path,
                 "has_tex": bool(tex_path),
                 "place2d_name": f"{mat_name}_place2d",
@@ -353,7 +419,7 @@ def create_mesh(
         )
     if not materials_out:
         # at least one default material
-        mat_name = f"lambert_{result['node_name']}"
+        mat_name = f"phong_{result['node_name']}"
         materials_out.append(
             {
                 "mat_name": mat_name,
@@ -363,6 +429,10 @@ def create_mesh(
                 "b": 0.8,
                 "a": 0.0,
                 "t": 0.0,
+                "ambient": [0.0, 0.0, 0.0],
+                "specular": [0.0, 0.0, 0.0],
+                "emissive": [0.0, 0.0, 0.0],
+                "specular_power": 0.0,
                 "repeatU": 1,
                 "repeatV": 1,
                 "mirrorU": 0,
@@ -407,7 +477,7 @@ def model_to_maya(nodes: List[Dict[str, Any]]) -> str:
                 f'\tsetAttr ".rotate" -type "double3" {" ".join(map(str, node["rotation"]))};'
             )
             out.append(
-                f'\tsetAttr ".scale" -type "double3" {" ".join(map(str, node["scaling"]))};'
+                f'\tsetAttr ".scale" -type "double3" {" ".join(map(str, node["scale"]))};'
             )
             out.append(
                 f'\tsetAttr ".rotatePivotTranslate" -type "double3" {" ".join(map(str, node["rotate_pivot_translate"]))};'
@@ -440,7 +510,7 @@ def model_to_maya(nodes: List[Dict[str, Any]]) -> str:
                 f'\tsetAttr ".rotate" -type "double3" {" ".join(map(str, node["rotation"]))};'
             )
             out.append(
-                f'\tsetAttr ".scale" -type "double3" {" ".join(map(str, node["scaling"]))};'
+                f'\tsetAttr ".scale" -type "double3" {" ".join(map(str, node["scale"]))};'
             )
             jo = " ".join(f"{d:.6f}" for d in node["joint_orient"])
             out.append(f'\tsetAttr ".jointOrient" -type "double3" {jo};')
@@ -464,7 +534,7 @@ def model_to_maya(nodes: List[Dict[str, Any]]) -> str:
                     "attrs": ["rotateX", "rotateY", "rotateZ"],
                     "axes": ["x", "y", "z"],
                 },
-                "scaling": {
+                "scale": {
                     "curve": "animCurveTU",
                     "attrs": ["scaleX", "scaleY", "scaleZ"],
                     "axes": ["x", "y", "z"],
@@ -562,7 +632,7 @@ def model_to_maya(nodes: List[Dict[str, Any]]) -> str:
 
             out.append("")
             for material in node["materials"]:
-                out.append(f'createNode lambert -name "{material["mat_name"]}";')
+                out.append(f'createNode phong -name "{material["mat_name"]}";')
                 out.append(
                     f'\tsetAttr ".color" -type "float3" {material["r"]} {material["g"]} {material["b"]} ;'
                 )
@@ -570,8 +640,21 @@ def model_to_maya(nodes: List[Dict[str, Any]]) -> str:
                     f'\tsetAttr ".transparency" -type "float3" {material["t"]} {material["t"]} {material["t"]} ;'
                 )
                 out.append('\tsetAttr ".diffuse" 1;')
-                out.append('\tsetAttr ".translucence" 0;')
-                out.append('\tsetAttr ".ambientColor" -type "float3" 0 0 0;')
+                amb = material["ambient"]
+                out.append(
+                    f'\tsetAttr ".ambientColor" -type "float3" {fmt_f(amb[0])} {fmt_f(amb[1])} {fmt_f(amb[2])};'
+                )
+                spec = material["specular"]
+                out.append(
+                    f'\tsetAttr ".specularColor" -type "float3" {fmt_f(spec[0])} {fmt_f(spec[1])} {fmt_f(spec[2])};'
+                )
+                emis = material["emissive"]
+                out.append(
+                    f'\tsetAttr ".incandescence" -type "float3" {fmt_f(emis[0])} {fmt_f(emis[1])} {fmt_f(emis[2])};'
+                )
+                out.append(
+                    f'\tsetAttr ".cosinePower" {fmt_f(material["specular_power"])};'
+                )
 
                 out.append(f'createNode shadingEngine -name "{material["sg_name"]}";')
                 out.append('\tsetAttr ".ihi" 0;')
@@ -586,6 +669,12 @@ def model_to_maya(nodes: List[Dict[str, Any]]) -> str:
                     out.append(f'\tsetAttr ".repeatU" {material["repeatU"]};')
                     out.append(f'\tsetAttr ".repeatV" {material["repeatV"]};')
                     out.append(f'\tsetAttr ".rotateUV" {material["rotateUV"]};')
+                    out.append(
+                        f'\tsetAttr ".mirrorU" {"yes" if material["mirrorU"] else "no"};'
+                    )
+                    out.append(
+                        f'\tsetAttr ".mirrorV" {"yes" if material["mirrorV"] else "no"};'
+                    )
 
                     out.append(f'createNode file -name "{material["file_name"]}";')
                     out.append(

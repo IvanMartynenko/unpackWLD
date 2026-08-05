@@ -136,8 +136,8 @@ def process_nmf_data(raw_bytes, model_name="unknown"):
         # Iterate through NMF nodes
         for node in nodes:
             # 1. If it is MESH, it may contain materials with textures
-            if node.get("word") == "MESH":
-                data = node.get("data", {})
+            if node.get("type") == "MESH":
+                data = node.get("payload", {})
                 materials = data.get("materials", [])
                 for mat in materials:
                     # Check texture name inside material

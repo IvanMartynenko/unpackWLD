@@ -295,20 +295,51 @@ def build_fbx_uv_layer(vbuf, ibuf):
     return uv_direct, uv_index
 
 
+# Confirmed via docs/GHIDRA_FINDINGS.md: `interpolation` set on an `ANIM` block
+# selects the engine's own eased keyframe interpolation - a cosine ease-in-out,
+# `(1 - cos(pi*t)) / 2` (from the exact float constants read out of VaBank.exe's
+# .rdata). Set on 77% of real ANIM blocks, not a rare case. Baked here the same
+# way as `nmf_scene_converter.py`'s `_apply_ease_supersampling`: extra, densely
+# -eased intermediate keyframes along each real segment, since plain linear/
+# STEP FBX playback has no native "eased between exactly these two keys" curve.
+_EASE_SAMPLES_PER_SEGMENT = 8
+
+
+def _ease_cosine(t):
+    return (1.0 - math.cos(math.pi * t)) / 2.0
+
+
+def _apply_ease_supersampling(frames, values, eased):
+    if not eased or len(frames) < 2:
+        return frames, values
+    n = _EASE_SAMPLES_PER_SEGMENT
+    out_frames = [frames[0]]
+    out_values = [values[0]]
+    for i in range(1, len(frames)):
+        f0, f1 = frames[i - 1], frames[i]
+        v0, v1 = values[i - 1], values[i]
+        for s in range(1, n + 1):
+            t = s / n
+            out_frames.append(f0 + (f1 - f0) * t)
+            out_values.append(v0 + (v1 - v0) * _ease_cosine(t))
+    return out_frames, out_values
+
+
 def animation_build_tracks_by_axis(raw_values):
     axes = ("x", "y", "z")
+    eased = bool(raw_values.get("interpolation"))
     result = {}
-    for track in ("translation", "rotation", "scaling"):
+    for track in ("translation", "rotation", "scale"):
         anim = raw_values.get(track)
         if not anim:
             continue
-        keys = anim.get("keys")
+        times = anim.get("times")
         values = anim.get("values")
-        if not keys or not values:
+        if not times or not values:
             continue
         track_hash = {}
         for ax in axes:
-            tlist = keys.get(ax)
+            tlist = times.get(ax)
             vlist = values.get(ax)
             if not tlist or not vlist:
                 continue
@@ -316,6 +347,7 @@ def animation_build_tracks_by_axis(raw_values):
             vals = [float(v) for v in vlist]
             if track == "rotation":
                 vals = [v * RAD2DEG for v in vals]
+            frames, vals = _apply_ease_supersampling(frames, vals, eased)
             track_hash[ax] = {"frames": frames, "values": vals}
         if track_hash:
             result[track] = track_hash
@@ -346,11 +378,11 @@ def process_scene_nodes(nodes, uid_gen):
         node["id"] = uid_gen.next()
 
     for node in nodes:
-        unpacked = node["data"]
-        w = node["word"]
+        unpacked = node["payload"]
+        w = node["type"]
 
         # Parent resolution
-        parent = index_map.get(node.get("parent_id"))
+        parent = index_map.get(node.get("parent"))
         parent_id = parent["id"] if parent else 0
 
         processed = None
@@ -371,13 +403,13 @@ def process_scene_nodes(nodes, uid_gen):
                 "scale_pivot": unpacked.get("scale_pivot", [0, 0, 0]),
             }
             if w == "ROOT":
-                base_matrix = unpacked["matrix"]
+                base_matrix = unpacked["local_matrix"]
                 S = [[-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
                 M2 = _mat_mul(S, base_matrix)
                 t, s, r = decompose_directx_row_major(M2)
                 processed["translation"] = [x * 1 for x in t]
                 # processed["translation"][2] = processed["translation"][2] * -1
-                processed["scaling"] = [x * 1 for x in s]
+                processed["scale"] = [x * 1 for x in s]
                 processed["rotation"] = [x * RAD2DEG for x in r]
             else:
 
@@ -387,17 +419,17 @@ def process_scene_nodes(nodes, uid_gen):
                     and processed["scale_pivot_translate"] == [0, 0, 0]
                     and processed["scale_pivot"] == [0, 0, 0]
                 ):
-                    t, s, r = decompose_directx_row_major(unpacked["matrix"])
+                    t, s, r = decompose_directx_row_major(unpacked["local_matrix"])
                     processed["translation"] = t
-                    processed["scaling"] = s
+                    processed["scale"] = s
                     processed["rotation"] = [x * RAD2DEG for x in r]
                 else:
                     processed["translation"] = unpacked["translation"]
-                    processed["scaling"] = unpacked["scaling"]
+                    processed["scale"] = unpacked["scale"]
                     processed["rotation"] = [x * RAD2DEG for x in unpacked["rotation"]]
 
             processed["animations"] = animation_build_tracks_by_axis(
-                unpacked.get("anim", {})
+                unpacked.get("animation", {})
             )
 
         # --- JOINT ---
@@ -407,17 +439,17 @@ def process_scene_nodes(nodes, uid_gen):
                 "node_name": node["name"],
                 "mesh": False,
                 "translation": unpacked["translation"],
-                "scaling": unpacked["scaling"],
+                "scale": unpacked["scale"],
                 "rotation": [r * RAD2DEG for r in unpacked["rotation"]],
             }
             # Extract Joint Orient (Pre-rotation in FBX)
-            # unpacked["rotation_matrix"] is usually 4x4 or 3x3 depending on parser
+            # unpacked["joint_orient_matrix"] is usually 4x4 or 3x3 depending on parser
             # Assume it's the raw matrix from which we extract orient
-            m3 = extract_3x3(unpacked.get("rotation_matrix"))
+            m3 = extract_3x3(unpacked.get("joint_orient_matrix"))
             processed["joint_orient"] = matrix_rowmajor_to_euler_xyz_standard(m3)
 
             processed["animations"] = animation_build_tracks_by_axis(
-                unpacked.get("anim", {})
+                unpacked.get("animation", {})
             )
 
         # --- LOCATOR ---
@@ -428,11 +460,13 @@ def process_scene_nodes(nodes, uid_gen):
                 "mesh": False,
                 # Locators might not have explicit TRS in some formats, defaults to identity
                 "translation": unpacked.get("translation", [0.0, 0.0, 0.0]),
-                "scaling": unpacked.get("scaling", [1.0, 1.0, 1.0]),
+                "scale": unpacked.get("scale", [1.0, 1.0, 1.0]),
                 "rotation": [
                     r * RAD2DEG for r in unpacked.get("rotation", [0.0, 0.0, 0.0])
                 ],
-                "animations": animation_build_tracks_by_axis(unpacked.get("anim", {})),
+                "animations": animation_build_tracks_by_axis(
+                    unpacked.get("animation", {})
+                ),
             }
 
         # --- MESH ---
@@ -441,9 +475,9 @@ def process_scene_nodes(nodes, uid_gen):
                 "node_type": "mesh",
                 "node_name": node["name"],
             }
-            raw_vbuf = unpacked["vbuf"]
+            raw_vbuf = unpacked["vertices"]
             # Check winding order (as you had it)
-            raw_ibuf = [[t[0], t[1], t[2]] for t in unpacked["ibuf"]]
+            raw_ibuf = [[t[0], t[1], t[2]] for t in unpacked["indices"]]
             if not is_mesh_right_handed(raw_ibuf, raw_vbuf):
                 raw_ibuf = [[t[0], t[2], t[1]] for t in raw_ibuf]
 
@@ -487,7 +521,8 @@ def process_scene_nodes(nodes, uid_gen):
                     ) + f"_{processed['node_name']}"
                     # In NMF alpha is usually transparency (0 - transparent?), in FBX TransparencyFactor (0 - opaque, 1 - transparent)
                     # But usually diffuse alpha is opacity. We will treat 'a' as Opacity (1 = visible).
-                    a = float(m.get("alpha", 1.0))
+                    diffuse = m.get("diffuse", [0.8, 0.8, 0.8, 1.0])
+                    a = float(diffuse[3]) if len(diffuse) > 3 else 1.0
 
                     tex_data = m.get("texture")
                     tex_path = (
@@ -505,7 +540,7 @@ def process_scene_nodes(nodes, uid_gen):
                         name_without_ext = (
                             os.path.splitext(filename)[0]
                             + "_"
-                            + str(tex_data.get("texture_page", 0))
+                            + str(tex_data.get("page", 0))
                         )
 
                         # 4. Form a new hardcoded path with .dds extension
@@ -515,18 +550,18 @@ def process_scene_nodes(nodes, uid_gen):
                     materials_out.append(
                         {
                             "mat_name": mat_name,
-                            "r": float(m.get("red", 0.8)),
-                            "g": float(m.get("green", 0.8)),
-                            "b": float(m.get("blue", 0.8)),
+                            "r": float(diffuse[0]) if len(diffuse) > 0 else 0.8,
+                            "g": float(diffuse[1]) if len(diffuse) > 1 else 0.8,
+                            "b": float(diffuse[2]) if len(diffuse) > 2 else 0.8,
                             "opacity": a,
                             "has_tex": bool(tex_path),
                             "tex_path": tex_path,
                             # Tiling parameters
-                            "repeatU": float(m.get("horizontal_stretch", 1.0)),
-                            "repeatV": float(m.get("vertical_stretch", 1.0)),
+                            "repeatU": float(m.get("uv_scale_u", 1.0)),
+                            "repeatV": float(m.get("uv_scale_v", 1.0)),
                             "offsetU": 0.0,  # Can be improved if NMF has offset
                             "offsetV": 0.0,
-                            "rotateUV": float(m.get("rotate", 0.0)),
+                            "rotateUV": float(m.get("uv_rotation", 0.0)),
                         }
                     )
 
@@ -885,7 +920,7 @@ def create_fbx_animation_data(node, model_id, layer_id):
             "def": [0.0, 0.0, 0.0],
         },
         "rotation": {"prop": "Lcl Rotation", "prefix": "R", "def": [0.0, 0.0, 0.0]},
-        "scaling": {"prop": "Lcl Scaling", "prefix": "S", "def": [1.0, 1.0, 1.0]},
+        "scale": {"prop": "Lcl Scaling", "prefix": "S", "def": [1.0, 1.0, 1.0]},
     }
     axes = ["x", "y", "z"]
     axis_labels = ["d|X", "d|Y", "d|Z"]
@@ -991,7 +1026,7 @@ def assemble_fbx(nodes, uid_gen):
             # Use float() for default values
             t_def = node.get("translation", [0.0, 0.0, 0.0])
             r_def = node.get("rotation", [0.0, 0.0, 0.0])
-            s_def = node.get("scaling", [1.0, 1.0, 1.0])
+            s_def = node.get("scale", [1.0, 1.0, 1.0])
 
             props70.append(model_values_prop("Lcl Translation", t_def))
             props70.append(model_values_prop("Lcl Rotation", r_def))

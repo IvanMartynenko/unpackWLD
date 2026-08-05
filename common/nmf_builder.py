@@ -13,6 +13,8 @@ Description:
     - Manages specific data alignment (4-byte string padding, odd index count padding).
     - Supports all NMF node types including skeletal animation and mesh data.
 
+    Field names match docs/NMF_SPEC.md.
+
 License: MIT License
 
 Usage:
@@ -40,10 +42,10 @@ class NmfBuilder:
         writer.push_int(0)  # int32 == 0
 
         for node in model_data:
-            token = node.get("word", "UNK ")
+            token = node.get("type", "UNK ")
             name = node.get("name", "")
-            parent_id = node.get("parent_id", -1)
-            data = node.get("data", {})
+            parent = node.get("parent", -1)
+            payload = node.get("payload", {})
 
             # Create a temporary writer for the chunk content
             # to verify its size before writing the block header
@@ -52,24 +54,24 @@ class NmfBuilder:
             # Route to specific data packers
             if token in ["ROOT", "FRAM"]:
                 chunk_writer.push_int(2)
-                chunk_writer.push_int(parent_id)
+                chunk_writer.push_int(parent)
                 chunk_writer.push_string(name)
-                self._pack_fram(chunk_writer, data)
+                self._pack_fram(chunk_writer, payload)
             elif token == "LOCA":
                 chunk_writer.push_int(0)
-                chunk_writer.push_int(parent_id)
+                chunk_writer.push_int(parent)
                 chunk_writer.push_string(name)
                 pass  # Empty data
             elif token == "JOIN":
                 chunk_writer.push_int(2)
-                chunk_writer.push_int(parent_id)
+                chunk_writer.push_int(parent)
                 chunk_writer.push_string(name)
-                self._pack_join(chunk_writer, data)
+                self._pack_join(chunk_writer, payload)
             elif token == "MESH":
                 chunk_writer.push_int(14)
-                chunk_writer.push_int(parent_id)
+                chunk_writer.push_int(parent)
                 chunk_writer.push_string(name)
-                self._pack_mesh(chunk_writer, data)
+                self._pack_mesh(chunk_writer, payload)
             else:
                 print(f"Warning: Unknown token {token}, writing header only.")
 
@@ -95,13 +97,13 @@ class NmfBuilder:
 
     def _pack_fram(self, writer, data):
         # Matrix
-        flat_mtx = flatten_matrix(data.get("matrix", []))
+        flat_mtx = flatten_matrix(data.get("local_matrix", []))
         writer.push_floats(flat_mtx)
 
         # Vectors
         vec_keys = [
             "translation",
-            "scaling",
+            "scale",
             "rotation",
             "rotate_pivot_translate",
             "rotate_pivot",
@@ -113,31 +115,31 @@ class NmfBuilder:
             vec = data.get(key, [0.0, 0.0, 0.0])
             writer.push_floats(vec)
 
-        if "anim" in data:
-            self._pack_anim(writer, data["anim"])
+        if "animation" in data:
+            self._pack_anim(writer, data["animation"])
         else:
             writer.push_int(0)
 
     def _pack_join(self, writer, data):
         # Matrix 1
-        flat_mtx = flatten_matrix(data.get("matrix", []))
+        flat_mtx = flatten_matrix(data.get("local_matrix", []))
         writer.push_floats(flat_mtx)
 
         # Basic Vectors
-        for key in ["translation", "scaling", "rotation"]:
+        for key in ["translation", "scale", "rotation"]:
             vec = data.get(key, [0.0, 0.0, 0.0])
             writer.push_floats(vec)
 
-        # Matrix 2 (Rotation Matrix)
-        flat_rot_mtx = flatten_matrix(data.get("rotation_matrix", []))
-        writer.push_floats(flat_rot_mtx)
+        # Matrix 2 (Joint Orient Matrix)
+        flat_orient_mtx = flatten_matrix(data.get("joint_orient_matrix", []))
+        writer.push_floats(flat_orient_mtx)
 
         # Limits
-        writer.push_floats(data.get("min_rot_limit", [0.0, 0.0, 0.0]))
-        writer.push_floats(data.get("max_rot_limit", [0.0, 0.0, 0.0]))
+        writer.push_floats(data.get("rotation_limit_min", [0.0, 0.0, 0.0]))
+        writer.push_floats(data.get("rotation_limit_max", [0.0, 0.0, 0.0]))
 
-        if "anim" in data:
-            self._pack_anim(writer, data["anim"])
+        if "animation" in data:
+            self._pack_anim(writer, data["animation"])
         else:
             writer.push_int(0)
 
@@ -148,28 +150,28 @@ class NmfBuilder:
         # Write 'ANIM' marker
         writer.push_word("ANIM")
 
-        unknown = anim_data.get("unknown", 0)
-        writer.push_int(unknown)
+        interpolation = anim_data.get("interpolation", 0)
+        writer.push_int(interpolation)
 
-        keys = ["translation", "rotation", "scaling"]
-        sizes = {"translation": [0, 0, 0], "rotation": [0, 0, 0], "scaling": [0, 0, 0]}
+        channels = ["translation", "rotation", "scale"]
+        sizes = {"translation": [0, 0, 0], "rotation": [0, 0, 0], "scale": [0, 0, 0]}
 
         # Pre-calculate sizes
-        for key in keys:
+        for key in channels:
             if key in anim_data:
-                axes = anim_data[key].get("keys", {})
+                axes = anim_data[key].get("times", {})
                 sizes[key][0] = len(axes.get("x", []))
                 sizes[key][1] = len(axes.get("y", []))
                 sizes[key][2] = len(axes.get("z", []))
 
         # Write sizes table
-        for key in keys:
+        for key in channels:
             writer.push_ints(sizes[key])
 
         # Write data
-        for key in keys:
+        for key in channels:
             cur = anim_data.get(key, {})
-            k_dict = cur.get("keys", {})
+            t_dict = cur.get("times", {})
             v_dict = cur.get("values", {})
 
             # X, Y, Z channels
@@ -177,35 +179,35 @@ class NmfBuilder:
                 idx = {"x": 0, "y": 1, "z": 2}[axis]
                 n = sizes[key][idx]
                 if n > 0:
-                    writer.push_floats(k_dict.get(axis, []))
+                    writer.push_floats(t_dict.get(axis, []))
                     writer.push_floats(v_dict.get(axis, []))
 
     def _pack_mesh(self, writer, data):
-        tnum = data.get("tnum", 0)
-        vnum = data.get("vnum", 0)
-        writer.push_int(tnum)
-        writer.push_int(vnum)
+        triangle_count = data.get("triangle_count", 0)
+        vertex_count = data.get("vertex_count", 0)
+        writer.push_int(triangle_count)
+        writer.push_int(vertex_count)
 
-        # VBUF
-        vbuf_lists = data.get("vbuf", [])
+        # Vertex buffer
+        vbuf_lists = data.get("vertices", [])
         vbuf_flat = [val for sublist in vbuf_lists for val in sublist]
         writer.push_floats(vbuf_flat)
 
-        # UVPT
-        uvpt_lists = data.get("uvpt", [])
-        uvpt_flat = [val for sublist in uvpt_lists for val in sublist]
-        writer.push_floats(uvpt_flat)
+        # Source UV
+        source_uv_lists = data.get("source_uv", [])
+        source_uv_flat = [val for sublist in source_uv_lists for val in sublist]
+        writer.push_floats(source_uv_flat)
 
-        # Indices (IBUF)
-        inum = data.get("inum", 0)
-        writer.push_int(inum)
+        # Indices
+        index_count = data.get("index_count", 0)
+        writer.push_int(index_count)
 
-        ibuf_lists = data.get("ibuf", [])
-        ibuf_flat = [val for sublist in ibuf_lists for val in sublist]
-        writer.push_uints16(ibuf_flat)
+        indices_lists = data.get("indices", [])
+        indices_flat = [val for sublist in indices_lists for val in sublist]
+        writer.push_uints16(indices_flat)
 
         # Padding for odd indices count (Critical!)
-        if inum % 2 == 1:
+        if index_count % 2 == 1:
             writer.push_uint16(0)
 
         # Flags
@@ -221,87 +223,90 @@ class NmfBuilder:
         for mat in materials:
             self._pack_mtrl(writer, mat)
 
-        # Mesh Anim
+        # Vertex animations
         # Parser logic loops while checking for "ANIM" token
-        if "mesh_anim" in data:
-            for anim_chunk in data["mesh_anim"]:
+        if "vertex_animations" in data:
+            for anim_chunk in data["vertex_animations"]:
                 writer.push_word("ANIM")
                 self._pack_single_anim_mesh(writer, anim_chunk)
             writer.push_int(0)
         else:
             writer.push_int(0)
 
-        # Anti-ground / Unknown floats
-        unknown_floats = data.get("collision_vertices", [])
-        cnt_floats = len(unknown_floats) // 3
-        writer.push_int(cnt_floats)
-        if cnt_floats > 0:
-            writer.push_floats(unknown_floats)
+        # Anti-ground / collision data
+        collision_vertices = data.get("collision_vertices", [])
+        collision_vertex_count = len(collision_vertices) // 3
+        writer.push_int(collision_vertex_count)
+        if collision_vertex_count > 0:
+            writer.push_floats(collision_vertices)
 
-        unknown_ints = data.get("collision_vertices", [])
-        writer.push_int(len(unknown_ints))
-        if len(unknown_ints) > 0:
-            writer.push_ints(unknown_ints)
+        collision_indices = data.get("collision_indices", [])
+        writer.push_int(len(collision_indices))
+        if len(collision_indices) > 0:
+            writer.push_ints(collision_indices)
 
     def _pack_mtrl(self, writer, mat):
         writer.push_word("MTRL")
         writer.push_string(mat.get("name", ""))
 
         writer.push_int(mat.get("blend_mode", 0))
-        writer.push_ints(mat.get("unknown_ints", [0] * 4))
-        writer.push_int(mat.get("uv_mapping_flip_horizontal", 0))
-        writer.push_int(mat.get("uv_mapping_flip_vertical", 0))
-        writer.push_int(mat.get("rotate", 0))
+        writer.push_ints(
+            [
+                mat.get("vertex_offset", 0),
+                mat.get("vertex_count", 0),
+                mat.get("index_offset", 0),
+                mat.get("index_count", 0),
+            ]
+        )
+        writer.push_int(mat.get("uv_flip_u", 0))
+        writer.push_int(mat.get("uv_flip_v", 0))
+        writer.push_int(mat.get("uv_rotation", 0))
 
-        writer.push_float(mat.get("horizontal_stretch", 1.0))
-        writer.push_float(mat.get("vertical_stretch", 1.0))
+        writer.push_float(mat.get("uv_scale_u", 1.0))
+        writer.push_float(mat.get("uv_scale_v", 1.0))
 
-        writer.push_float(mat.get("red", 1.0))
-        writer.push_float(mat.get("green", 1.0))
-        writer.push_float(mat.get("blue", 1.0))
-        writer.push_float(mat.get("alpha", 1.0))
+        diffuse = mat.get("diffuse", [1.0, 1.0, 1.0, 1.0])
+        writer.push_floats(diffuse)
 
-        writer.push_float(mat.get("red2", 0.0))
-        writer.push_float(mat.get("green2", 0.0))
-        writer.push_float(mat.get("blue2", 0.0))
-        writer.push_float(mat.get("alpha2", 0.0))
+        ambient = mat.get("ambient", [0.0, 0.0, 0.0, 0.0])
+        writer.push_floats(ambient)
 
-        writer.push_ints(mat.get("unknown_zero_ints", [0] * 9))
+        specular = mat.get("specular", [0, 0, 0, 0])
+        emissive = mat.get("emissive", [0, 0, 0, 0])
+        specular_power = mat.get("specular_power", 0)
+        writer.push_ints(list(specular) + list(emissive) + [specular_power])
 
-        if "texture" in mat:
+        texture = mat.get("texture")
+        if texture and texture.get("kind") == "TXPG":
             writer.push_word("TXPG")
-            tex = mat["texture"]
-            writer.push_string(tex.get("name", ""))
-            writer.push_int(tex.get("texture_page", 0))
-            writer.push_int(tex.get("index_texture_on_page", 0))
-            writer.push_int(tex.get("x0", 0))
-            writer.push_int(tex.get("y0", 0))
-            writer.push_int(tex.get("x2", 0))
-            writer.push_int(tex.get("y2", 0))
-        elif "text" in mat:
+            writer.push_string(texture.get("name", ""))
+            writer.push_int(texture.get("page", 0))
+            writer.push_int(texture.get("index_on_page", 0))
+            atlas_rect = texture.get("atlas_rect", [0, 0, 0, 0])
+            writer.push_ints(atlas_rect)
+        elif texture and texture.get("kind") == "TEXT":
             writer.push_word("TEXT")
-            writer.push_string(mat["text"].get("name", ""))
+            writer.push_string(texture.get("name", ""))
         else:
             writer.push_int(0)
 
     def _pack_single_anim_mesh(self, writer, data):
-        # Using push_int for bool as parser reads int (0 or -1 usually, but generic int here)
-        writer.push_int(data.get("unknown_bool", 0))
+        writer.push_int(data.get("interpolation", 0))
 
-        size = data.get("unknown_size_of_ints", 0)
-        writer.push_int(size)
-        writer.push_ints(data.get("unknown_ints", []))
+        vertex_count = data.get("vertex_count", 0)
+        writer.push_int(vertex_count)
+        writer.push_ints(data.get("vertex_indices", []))
 
-        writer.push_floats(data.get("unknown_floats", [0.0] * 3))
+        writer.push_floats(data.get("rest_position", [0.0] * 3))
 
-        s1 = data.get("unknown_size1", 0)
-        s2 = data.get("unknown_size2", 0)
-        s3 = data.get("unknown_size3", 0)
+        key_count_x = data.get("key_count_x", 0)
+        key_count_y = data.get("key_count_y", 0)
+        key_count_z = data.get("key_count_z", 0)
 
-        writer.push_int(s1)
-        writer.push_int(s2)
-        writer.push_int(s3)
+        writer.push_int(key_count_x)
+        writer.push_int(key_count_y)
+        writer.push_int(key_count_z)
 
-        writer.push_floats(data.get("unknown_floats1", []))
-        writer.push_floats(data.get("unknown_floats2", []))
-        writer.push_floats(data.get("unknown_floats3", []))
+        writer.push_floats(data.get("delta_x", []))
+        writer.push_floats(data.get("delta_y", []))
+        writer.push_floats(data.get("delta_z", []))

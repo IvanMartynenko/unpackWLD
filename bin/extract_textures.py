@@ -30,18 +30,25 @@ import io
 
 DDS_MAGIC = 0x20534444
 COLOR_LUT = []
+COLOR_LUT_OPAQUE = []
 
 
 def init_lookup_table():
     """
-    Generates a lookup table for A1R5G5B5 -> RGBA conversion.
+    Generates lookup tables for A1R5G5B5 -> RGBA conversion.
     Calculates all 65536 possible 16-bit color values once to speed up processing.
+
+    Two tables are built because the top bit only carries real alpha
+    information when the source page's is_alpha flag is set. Pages without
+    an alpha channel are really X1R5G5B5 and that bit is garbage, so it must
+    be ignored (treated as fully opaque) rather than read as alpha.
     """
-    global COLOR_LUT
+    global COLOR_LUT, COLOR_LUT_OPAQUE
     if COLOR_LUT:
         return
 
     COLOR_LUT = [None] * 65536
+    COLOR_LUT_OPAQUE = [None] * 65536
 
     for pixel in range(65536):
         a_bit = (pixel & 0x8000) >> 15
@@ -53,6 +60,7 @@ def init_lookup_table():
         a = 255 if a_bit else 0
 
         COLOR_LUT[pixel] = struct.pack("4B", r, g, b, a)
+        COLOR_LUT_OPAQUE[pixel] = struct.pack("4B", r, g, b, 255)
 
 
 init_lookup_table()
@@ -140,15 +148,18 @@ def make_png_chunk(tag, data):
     return chunk
 
 
-def convert_a1r5g5b5_to_rgba_fast(raw_bytes, width, height, png_mode=True):
+def convert_a1r5g5b5_to_rgba_fast(raw_bytes, width, height, png_mode=True, has_alpha=True):
     """
     Converts raw 16-bit data to 32-bit RGBA.
     If png_mode is True, prepends \x00 filter byte to each row for PNG writer.
     If png_mode is False, returns raw RGBA bytes for TIFF/DDS.
+    If has_alpha is False, the top bit is ignored and pixels are fully opaque
+    (mirrors the DDS header, which also drops the alpha mask in that case).
     """
     count = width * height
     shorts = struct.unpack(f"<{count}H", raw_bytes)
     scanlines = []
+    lut = COLOR_LUT if has_alpha else COLOR_LUT_OPAQUE
 
     # Process row by row for performance
     for y in range(height):
@@ -157,7 +168,7 @@ def convert_a1r5g5b5_to_rgba_fast(raw_bytes, width, height, png_mode=True):
         row_shorts = shorts[row_start:row_end]
 
         # LUT lookup
-        row_pixels = [COLOR_LUT[val] for val in row_shorts]
+        row_pixels = [lut[val] for val in row_shorts]
 
         raw_row = b"".join(row_pixels)
 
@@ -170,9 +181,11 @@ def convert_a1r5g5b5_to_rgba_fast(raw_bytes, width, height, png_mode=True):
     return b"".join(scanlines)
 
 
-def save_png_pure(path, width, height, raw_bytes):
+def save_png_pure(path, width, height, raw_bytes, has_alpha=True):
     # PNG mode = True to get filter bytes
-    scanlines = convert_a1r5g5b5_to_rgba_fast(raw_bytes, width, height, png_mode=True)
+    scanlines = convert_a1r5g5b5_to_rgba_fast(
+        raw_bytes, width, height, png_mode=True, has_alpha=has_alpha
+    )
     # Level 1 compression is much faster for large batches
     compressed = zlib.compress(scanlines, level=1)
 
@@ -187,12 +200,14 @@ def save_png_pure(path, width, height, raw_bytes):
         f.write(make_png_chunk(b"IEND", b""))
 
 
-def save_tiff_pure(path, width, height, raw_bytes):
+def save_tiff_pure(path, width, height, raw_bytes, has_alpha=True):
     """
     Saves Uncompressed RGBA TIFF using standard library only.
     """
     # PNG mode = False to get raw RGBA
-    rgba_data = convert_a1r5g5b5_to_rgba_fast(raw_bytes, width, height, png_mode=False)
+    rgba_data = convert_a1r5g5b5_to_rgba_fast(
+        raw_bytes, width, height, png_mode=False, has_alpha=has_alpha
+    )
 
     # TIFF Header (Little Endian 'II', Version 42, Offset 8)
     header = struct.pack("<2sH I", b"II", 42, 8)
@@ -362,7 +377,7 @@ def process_file(args):
 
             # Save Atlas
             if args.mode in ["atlas", "both"]:
-                base = f"atlas_{page_info['id']}"
+                base = f"{page_info['id']}"
 
                 for fmt in formats_to_save:
                     path = os.path.join(atlas_dir, f"{base}.{fmt}")
@@ -378,7 +393,11 @@ def process_file(args):
                             f.write(image_data)
                     elif fmt == "tif":
                         save_tiff_pure(
-                            path, page_info["width"], page_info["height"], image_data
+                            path,
+                            page_info["width"],
+                            page_info["height"],
+                            image_data,
+                            has_alpha=page_info["is_alpha"],
                         )
                     elif fmt == "png":
                         save_png_pure(
@@ -386,6 +405,7 @@ def process_file(args):
                             page_info["width"],
                             page_info["height"],
                             image_data,
+                            has_alpha=page_info["is_alpha"],
                         )
 
             # Extract Parts
@@ -435,12 +455,18 @@ def process_file(args):
                         # Save File
                         if fmt == "dds":
                             with open(full_path, "wb") as f:
-                                f.write(create_dds_header(w, h, True))
+                                f.write(
+                                    create_dds_header(w, h, page_info["is_alpha"])
+                                )
                                 f.write(sub_bytes)
                         elif fmt == "tif":
-                            save_tiff_pure(full_path, w, h, sub_bytes)
+                            save_tiff_pure(
+                                full_path, w, h, sub_bytes, has_alpha=page_info["is_alpha"]
+                            )
                         else:  # png
-                            save_png_pure(full_path, w, h, sub_bytes)
+                            save_png_pure(
+                                full_path, w, h, sub_bytes, has_alpha=page_info["is_alpha"]
+                            )
 
         except Exception as e:
             if args.verbose:

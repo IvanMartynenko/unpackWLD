@@ -29,17 +29,17 @@ def get_animated_node_types(filepath):
 
     animated_types = set()
     for node in raw_nodes:
-        data = node.get("data", {})
-        anim = data.get("anim")
-        
+        payload = node.get("payload", {})
+        anim = payload.get("animation")
+
         # Если блок анимации существует и не пуст
         if anim:
-            node_type = node.get("word", "UNKNOWN")
+            node_type = node.get("type", "UNKNOWN")
             animated_types.add(node_type)
 
-        mesh_anim = data.get("mesh_anim")
-        if mesh_anim:
-            node_type = node.get("word", "UNKNOWN")
+        vertex_animations = payload.get("vertex_animations")
+        if vertex_animations:
+            node_type = node.get("type", "UNKNOWN")
             animated_types.add(node_type)
             
     return animated_types

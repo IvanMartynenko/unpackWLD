@@ -131,14 +131,14 @@ def _apply_anim_to_object(obj, anim_tracks):
     spec = {
         "translation": ("location", (0, 1, 2), 1.0),
         "rotation": ("rotation_euler", (0, 1, 2), 1.0),
-        "scaling": ("scale", (0, 1, 2), 1.0),
+        "scale": ("scale", (0, 1, 2), 1.0),
     }
     for track, (prop, idxs, scale) in spec.items():
         track_data = anim_tracks.get(track)
         if not track_data:
             continue
         values = track_data.get("values", {})
-        keys = track_data.get("keys", {})
+        keys = track_data.get("times", {})
         for ax_name, ax_i in zip(("x", "y", "z"), idxs):
             vals = values.get(ax_name)
             frames = keys.get(ax_name)

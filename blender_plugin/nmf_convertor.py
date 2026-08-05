@@ -83,7 +83,7 @@ class MeshGeom:
 
     @staticmethod
     def mesh_right_handed(ibuf, mesh_data):
-        vbuf = mesh_data["vbuf"]
+        vbuf = mesh_data["vertices"]
         pos = [MeshGeom.pos_of(r) for r in vbuf]
         nrm = [MeshGeom.nrm_of(r) for r in vbuf]
         pos_cnt = 0
@@ -202,11 +202,12 @@ def _mat_mul(a, b):
 
 
 def _get_rotation_degrees(rot):
+    print("rot", rot)
     table = {
         0: 0.0,
-        1: math.radians(90),
-        2: math.radians(180),
-        3: math.radians(270),
+        1: math.radians(-90),
+        2: math.radians(-180),
+        3: math.radians(-270),
     }
     return table.get(rot, 0)
 
@@ -216,8 +217,8 @@ def convert_and_filter_nodes(nodes, filepath):
     transform_new_id = -1
 
     for node in nodes:
-        if node["word"] == "ROOT":
-            base_matrix = _dx_to_blender_matrix(node["data"]["matrix"])
+        if node["type"] == "ROOT":
+            base_matrix = _dx_to_blender_matrix(node["payload"]["local_matrix"])
 
             # --- ADD MIRROR ONLY FOR ROOT ---
             S = [
@@ -234,14 +235,14 @@ def convert_and_filter_nodes(nodes, filepath):
                     "type": "transform",
                     "name": node["name"],
                     "id": node["index"],
-                    "parent_id": node["parent_id"],
+                    "parent_id": node.get("parent"),
                     "matrix": M2,
                 }
             )
-        if node["word"] == "FRAM":
-            if node["data"].get("anim"):
-                matrix = _dx_to_blender_matrix(node["data"]["matrix"])
-                pivot_bl = node["data"]["scale_pivot"]
+        if node["type"] == "FRAM":
+            if node["payload"].get("animation"):
+                matrix = _dx_to_blender_matrix(node["payload"]["local_matrix"])
+                pivot_bl = node["payload"]["scale_pivot"]
 
                 parent_matrix = _mat_mul(matrix, _make_translation_matrix(pivot_bl))
                 pivot_matrix = _make_translation_matrix([-1 * j for j in pivot_bl])
@@ -253,9 +254,9 @@ def convert_and_filter_nodes(nodes, filepath):
                         "type": "transform",
                         "name": node["name"],
                         "id": id,
-                        "parent_id": node["parent_id"],
+                        "parent_id": node.get("parent"),
                         "matrix": parent_matrix,
-                        "animation": node["data"].get("anim"),
+                        "animation": node["payload"].get("animation"),
                     }
                 )
                 new_nodes.append(
@@ -273,27 +274,27 @@ def convert_and_filter_nodes(nodes, filepath):
                         "type": "transform",
                         "name": node["name"],
                         "id": node["index"],
-                        "parent_id": node["parent_id"],
-                        "matrix": _dx_to_blender_matrix(node["data"]["matrix"]),
+                        "parent_id": node.get("parent"),
+                        "matrix": _dx_to_blender_matrix(node["payload"]["local_matrix"]),
                     }
                 )
-        if node["word"] == "JOIN":
-            if node["data"].get("anim"):
+        if node["type"] == "JOIN":
+            if node["payload"].get("animation"):
                 id = transform_new_id
                 transform_new_id -= 1
 
-                matrix = _dx_to_blender_matrix(node["data"]["matrix"])
+                matrix = _dx_to_blender_matrix(node["payload"]["local_matrix"])
                 new_nodes.append(
                     {
                         "type": "transform",
                         "name": node["name"],
                         "id": id,
-                        "parent_id": node["parent_id"],
+                        "parent_id": node.get("parent"),
                         "matrix": matrix,
                     }
                 )
 
-                rot_bl = node["data"]["rotation_matrix"]
+                rot_bl = node["payload"]["joint_orient_matrix"]
                 new_nodes.append(
                     {
                         "type": "transform",
@@ -301,7 +302,7 @@ def convert_and_filter_nodes(nodes, filepath):
                         "id": node["index"],
                         "parent_id": id,
                         "matrix": rot_bl,
-                        "animation": node["data"].get("anim"),
+                        "animation": node["payload"].get("animation"),
                     }
                 )
             else:
@@ -310,25 +311,25 @@ def convert_and_filter_nodes(nodes, filepath):
                         "type": "transform",
                         "name": node["name"],
                         "id": node["index"],
-                        "parent_id": node["parent_id"],
-                        "matrix": _dx_to_blender_matrix(node["data"]["matrix"]),
+                        "parent_id": node.get("parent"),
+                        "matrix": _dx_to_blender_matrix(node["payload"]["local_matrix"]),
                     }
                 )
-        if node["word"] == "LOCA":
+        if node["type"] == "LOCA":
             new_nodes.append(
                 {
                     "type": "empty",
                     "name": node["name"],
                     "id": node["index"],
-                    "parent_id": node["parent_id"],
+                    "parent_id": node.get("parent"),
                 }
             )
-        if node["word"] == "MESH":
-            mesh_data = node["data"]
-            vrts = [[t[0], t[1], t[2]] for t in mesh_data["vbuf"]]
-            ibuf = [[tri[0], tri[1], tri[2]] for tri in mesh_data["ibuf"]]
+        if node["type"] == "MESH":
+            mesh_data = node["payload"]
+            vrts = [[t[0], t[1], t[2]] for t in mesh_data["vertices"]]
+            ibuf = [[tri[0], tri[1], tri[2]] for tri in mesh_data["indices"]]
             if MeshGeom.mesh_right_handed(ibuf, mesh_data):
-                ibuf = [[tri[0], tri[2], tri[1]] for tri in mesh_data["ibuf"]]
+                ibuf = [[tri[0], tri[2], tri[1]] for tri in mesh_data["indices"]]
 
             edge, face = EdgesFaces.build(ibuf)
             edge = [e + [0] if len(e) == 2 else e for e in edge]
@@ -337,12 +338,11 @@ def convert_and_filter_nodes(nodes, filepath):
             materials_out = []
 
             for m in materials_in:
-                uints = m.get("unknown_ints")
-                if uints and len(uints) >= 4:
-                    min_vertex = uints[0]    # Сдвиг вершин (BaseVertexIndex)
-                    start_index = uints[2]   # Откуда начинаются индексы этого куска
-                    num_indices = uints[3]   # Сколько всего индексов в куске
-                    
+                if "vertex_offset" in m:
+                    min_vertex = m["vertex_offset"]    # Сдвиг вершин (BaseVertexIndex)
+                    start_index = m.get("index_offset", 0)   # Откуда начинаются индексы этого куска
+                    num_indices = m.get("index_count", 0)    # Сколько всего индексов в куске
+
                     start_face = start_index // 3
                     num_faces = num_indices // 3
                     
@@ -358,47 +358,71 @@ def convert_and_filter_nodes(nodes, filepath):
                 tex_info = m.get("texture")
                 tex_path = None
 
-                if isinstance(tex_info, dict):
-                    # 1. Get name
-                    raw_name = tex_info.get("name")
-                    if raw_name:
-                        fname = raw_name.replace("\\", "/").split("/")[-1]
-                        root, _ = os.path.splitext(fname)
-                        page = tex_info.get("texture_page", 0)
+            # Указываем нужную директорию для сохранения
+            output_dir = "/home/iwan/Source/output_textures/Textures/"
+            if isinstance(tex_info, dict):
+                # 1. Get name
+                raw_name = tex_info.get("name")
+                if raw_name:
+                    # Извлекаем имя файла, игнорируя пути Windows (\) и Linux (/)
+                    fname = raw_name.replace("\\", "/").split("/")[-1]
+                    root, _ = os.path.splitext(fname)
+                    page = tex_info.get("page", 0)
 
-                        base = f"{root}_{page}.dds"
-                        tex_path = os.path.join(nmf_dir, base)
+                    base = f"{root}_{page}.dds"
 
+                    # Собираем путь с новой директорией
+                    tex_path = os.path.join(output_dir, base)
+
+
+
+                # Читаем исходные значения из словаря (предполагаем, что там 1 или 0, либо True/False)
+                flip_u = bool(m.get("uv_flip_u", 0))
+                flip_v = bool(m.get("uv_flip_v", 0))
+
+                diffuse = m.get("diffuse", [0.8, 0.8, 0.8, 1.0])
                 materials_out.append(
                     {
                         "mat_name": mat_name,
-                        "r": m["red"],
-                        "g": m["green"],
-                        "b": m["blue"],
-                        "a": m["alpha"],
-                        "repeatU": m["horizontal_stretch"],
-                        "repeatV": m["vertical_stretch"],
-                        "mirrorU": m["uv_mapping_flip_vertical"],
-                        "mirrorV": m["uv_mapping_flip_horizontal"],
-                        "rotateUV": _get_rotation_degrees(m["rotate"]),
+                        "r": diffuse[0] if len(diffuse) > 0 else 0.8,
+                        "g": diffuse[1] if len(diffuse) > 1 else 0.8,
+                        "b": diffuse[2] if len(diffuse) > 2 else 0.8,
+                        "a": diffuse[3] if len(diffuse) > 3 else 1.0,
+                        "repeatU": m["uv_scale_u"],
+                        "repeatV": m["uv_scale_v"],
+
+                        # Инвертируем флаг V! (Если в игре 0, то в Blender будет True)
+                        "mirrorV": not flip_v,
+
+                        # Для U обычно инверсия не нужна, но если текстуры будут отзеркалены по горизонтали,
+                        # попробуйте сделать "mirrorU": not flip_u
+                        "mirrorU": flip_u,
+
+                        "rotateUV": _get_rotation_degrees(m["uv_rotation"]),
                         "tex_path": tex_path,
                         "has_tex": bool(tex_path),
                         "blend_mode": m["blend_mode"],
-                        "unknown_ints": m.get("unknown_ints", [])
+                        "unknown_ints": [
+                            m.get("vertex_offset", 0),
+                            m.get("vertex_count", 0),
+                            m.get("index_offset", 0),
+                            m.get("index_count", 0),
+                        ],
                     }
                 )
+                print("materials_out:", materials_out)
 
             new_nodes.append(
                 {
                     "type": "mesh",
                     "name": node["name"],
                     "id": node["index"],
-                    "parent_id": node["parent_id"],
+                    "parent_id": node.get("parent"),
                     "vrts": vrts,
                     "ibuf": ibuf,
                     "edge": edge,
                     "face": face,
-                    "uvpt": mesh_data["uvpt"],
+                    "uvpt": mesh_data["source_uv"],
                     "uv_index_of_vertex": list(range(len(vrts))),
                     "flip_normals": bool(mesh_data["inside"]),
                     "backface_culling": bool(mesh_data["backface_culling"]),
